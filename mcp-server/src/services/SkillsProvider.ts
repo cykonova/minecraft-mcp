@@ -112,6 +112,11 @@ export class SkillsProvider {
         description: `${edition} ${category} skill: ${skillName}`,
         edition: edition as any,
         category,
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: []
+        },
         execute: async (bot: AnyBot, args: any) => {
           // Validate bot edition matches skill edition
           const botEdition = this.getBotEdition(bot);

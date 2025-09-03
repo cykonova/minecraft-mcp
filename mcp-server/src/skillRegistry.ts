@@ -10,14 +10,9 @@ import { ISkill } from './skills/ISkill.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export interface SkillDefinition {
-    name: string;
-    description: string;
-    inputSchema: {
-        type: string;
-        properties: Record<string, any>;
-        required: string[];
-    };
+// Legacy interface for backward compatibility - use ISkill instead
+export interface SkillDefinition extends ISkill {
+    // For backward compatibility, maintain the old execute signature
     execute: (bot: AnyBot, args: any) => Promise<any>;
 }
 
@@ -366,6 +361,8 @@ export async function loadSkills(skillsProvider?: SkillsProvider): Promise<Skill
         skills.push({
             name: skillName,
             description: metadata.description,
+            edition: 'universal', // Default to universal for registry-based skills
+            category: 'verified',  // Default to verified for registry-based skills
             inputSchema: {
                 type: "object",
                 properties: metadata.params,
