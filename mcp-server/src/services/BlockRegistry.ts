@@ -25,12 +25,16 @@ export class BlockRegistry {
 
   constructor(version: string = '1.20') {
     this.version = version;
-    this.loadBlockData();
+    this.loadBlockData().catch(error => {
+      console.error('[BlockRegistry] Failed to load block data:', error);
+    });
   }
 
-  private loadBlockData(): void {
+  private async loadBlockData(): Promise<void> {
     try {
-      const minecraftData = require('minecraft-data')(this.version);
+      // Dynamic import to avoid require issues in ES modules
+      const { default: minecraftDataModule } = await import('minecraft-data');
+      const minecraftData = minecraftDataModule(this.version);
       
       for (const block of Object.values(minecraftData.blocks) as any[]) {
         const properties: BlockProperties = {

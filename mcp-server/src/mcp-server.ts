@@ -85,11 +85,20 @@ if (!isContainerReady()) {
     process.exit(1);
 }
 
-// Get instances from DI container using both legacy and typed tokens for demonstration
+// Get instances from DI container
 const container = getContainer();
-const botManager = container.resolve(TOKENS.BotManager);
+const botManager = new BotManager(); // Create manually due to circular dependency issues
 const skillRegistry = container.resolve(TOKENS.SkillRegistry);
 const skillsProvider = container.resolve(TOKENS.SkillsProvider);
+
+// Inject services into BotManager manually
+botManager.injectServices(
+    container.resolve(TOKENS.PathfindingService),
+    container.resolve(TOKENS.MovementService),
+    container.resolve(TOKENS.InventoryService),
+    container.resolve(TOKENS.BlockInteractionService),
+    container.resolve(TOKENS.CombatService)
+);
 
 // Example of resolving with typed tokens (these are available for future use)
 const logger = container.resolve(TOKENS.Logger) as any;
@@ -200,7 +209,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
             if (edition === 'bedrock') {
                 // Create Bedrock bot
-                const bedrockBot = await BedrockBotWrapper.create({
+                const bedrockBot = await botManager.createBedrockBotWrapper({
                     host: serverHost,
                     port: serverPort,
                     username: username,
@@ -308,8 +317,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
                     )
                 ]);
 
-                // Wrap Java bot in unified interface
-                unifiedBot = new JavaBotWrapper(bot);
+                // Wrap Java bot in unified interface with services
+                unifiedBot = botManager.createJavaBotWrapper(bot);
                 botId = botManager.addBot(username, unifiedBot as any);
             }
 

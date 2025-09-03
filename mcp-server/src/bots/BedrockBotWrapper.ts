@@ -1,8 +1,13 @@
+import { injectable } from 'tsyringe';
 import { UnifiedBot } from './UnifiedBot.js';
 import { createClient, Client } from 'bedrock-protocol';
 import { Vec3 } from 'vec3';
 import { BlockRegistry } from '../services/BlockRegistry.js';
 import { IPathfindingService } from '../services/pathfinding/IPathfindingService.js';
+import { IMovementService } from '../services/movement/IMovementService.js';
+import { IInventoryService } from '../services/inventory/IInventoryService.js';
+import { IBlockInteractionService } from '../services/blocks/IBlockInteractionService.js';
+import { ICombatService } from '../services/combat/ICombatService.js';
 import { PathfindingService } from '../services/pathfinding/PathfindingService.js';
 import { BedrockProtocolHelpers } from './bedrock/BedrockProtocolHelpers.js';
 import { getContainer } from '../config/container.js';
@@ -30,6 +35,10 @@ export class BedrockBotWrapper implements UnifiedBot {
   private chatHistory: ChatMessage[] = [];
   private blockRegistry: BlockRegistry;
   private pathfindingService: IPathfindingService;
+  private movementService?: IMovementService;
+  private inventoryService?: IInventoryService;
+  private blockInteractionService?: IBlockInteractionService;
+  private combatService?: ICombatService;
   private protocolHelpers: BedrockProtocolHelpers;
   private inventoryData: Map<number, any> = new Map();
   private selectedSlot: number = 0;
@@ -39,7 +48,15 @@ export class BedrockBotWrapper implements UnifiedBot {
   entity?: any;
   inventory?: any;
   
-  constructor(client: Client, username: string, pathfindingService?: IPathfindingService) {
+  constructor(
+    client: Client, 
+    username: string, 
+    pathfindingService?: IPathfindingService,
+    movementService?: IMovementService,
+    inventoryService?: IInventoryService,
+    blockInteractionService?: IBlockInteractionService,
+    combatService?: ICombatService
+  ) {
     this._bot = client;
     this.username = username;
     this.blockRegistry = new BlockRegistry('1.20');
@@ -58,6 +75,12 @@ export class BedrockBotWrapper implements UnifiedBot {
         this.pathfindingService = new PathfindingService(this.blockRegistry);
       }
     }
+
+    // Set other services
+    this.movementService = movementService;
+    this.inventoryService = inventoryService;
+    this.blockInteractionService = blockInteractionService;
+    this.combatService = combatService;
     
     this.protocolHelpers = new BedrockProtocolHelpers(client);
     this.setupEventHandlers();
@@ -69,6 +92,12 @@ export class BedrockBotWrapper implements UnifiedBot {
     username: string;
     offline?: boolean;
     version?: string;
+  }, services?: {
+    pathfindingService?: IPathfindingService;
+    movementService?: IMovementService;
+    inventoryService?: IInventoryService;
+    blockInteractionService?: IBlockInteractionService;
+    combatService?: ICombatService;
   }): Promise<BedrockBotWrapper> {
     return new Promise((resolve, reject) => {
       try {
@@ -81,7 +110,15 @@ export class BedrockBotWrapper implements UnifiedBot {
           skipPing: true
         });
         
-        const wrapper = new BedrockBotWrapper(client, options.username);
+        const wrapper = new BedrockBotWrapper(
+          client, 
+          options.username,
+          services?.pathfindingService,
+          services?.movementService,
+          services?.inventoryService,
+          services?.blockInteractionService,
+          services?.combatService
+        );
         
         // Wait for spawn event
         client.once('spawn', () => {
@@ -338,6 +375,16 @@ export class BedrockBotWrapper implements UnifiedBot {
   async equip(item: any, destination: string): Promise<void> {
     if (!item) return;
     
+    // Delegate to inventory service if available
+    if (this.inventoryService) {
+      const result = await this.inventoryService.equipItem(this, item.name || `item_${item.network_id}`, destination as any);
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      return;
+    }
+
+    // Fallback to direct protocol implementation
     // Find the item in inventory
     let itemSlot = -1;
     for (const [slot, invItem] of this.inventoryData.entries()) {
@@ -388,6 +435,19 @@ export class BedrockBotWrapper implements UnifiedBot {
   async tossStack(item: any, count?: number): Promise<void> {
     if (!item) return;
     
+    // Delegate to inventory service if available
+    if (this.inventoryService) {
+      const result = await this.inventoryService.dropItem(this, {
+        name: item.name || `item_${item.network_id}`,
+        count: count || item.count || 1
+      });
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      return;
+    }
+
+    // Fallback to direct protocol implementation
     // Find the item in inventory
     let itemSlot = -1;
     for (const [slot, invItem] of this.inventoryData.entries()) {
@@ -538,6 +598,13 @@ export class BedrockBotWrapper implements UnifiedBot {
   }
   
   async digBlock(position: Vec3): Promise<void> {
+    // Delegate to block interaction service if available
+    if (this.blockInteractionService) {
+      await this.blockInteractionService.breakBlock(this, position);
+      return;
+    }
+
+    // Fallback to direct protocol implementation
     await this.protocolHelpers.startBreakBlock(position);
     
     // Calculate break time based on block hardness
@@ -550,11 +617,29 @@ export class BedrockBotWrapper implements UnifiedBot {
   }
   
   async placeBlock(referenceBlock: any, face: Vec3): Promise<void> {
+    // Delegate to block interaction service if available
+    if (this.blockInteractionService) {
+      const position = referenceBlock.position.plus(face);
+      await this.blockInteractionService.placeBlock(this, position, 'unknown', {
+        referenceBlock,
+        face
+      });
+      return;
+    }
+
+    // Fallback to direct protocol implementation
     const position = referenceBlock.position.plus(face);
     await this.protocolHelpers.placeBlock(position);
   }
   
   async activateBlock(block: any): Promise<void> {
+    // Delegate to block interaction service if available
+    if (this.blockInteractionService) {
+      await this.blockInteractionService.activateBlock(this, block.position);
+      return;
+    }
+
+    // Fallback to direct protocol implementation
     await this.protocolHelpers.openContainer(block.position);
   }
   

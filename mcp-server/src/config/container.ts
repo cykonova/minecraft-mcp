@@ -14,14 +14,18 @@ import {
   ServiceFactory
 } from './types.js';
 import { TOKENS } from './tokens.js';
-import { BotManager } from '../botManager.js';
+// import { BotManager } from '../botManager.js'; // Removed due to circular dependency
 import { SkillRegistry } from '../skillRegistry.js';
 import { SkillsProvider } from '../services/SkillsProvider.js';
+import { ServiceRegistry } from '../services/ServiceRegistry.js';
 import { BlockRegistry } from '../services/BlockRegistry.js';
 import { PathfindingService } from '../services/pathfinding/PathfindingService.js';
 import { InventoryService } from '../services/inventory/InventoryService.js';
 import { JavaInventoryStrategy } from '../services/inventory/strategies/JavaInventoryStrategy.js';
 import { BedrockInventoryStrategy } from '../services/inventory/strategies/BedrockInventoryStrategy.js';
+import { MovementService } from '../services/movement/MovementService.js';
+import { BlockInteractionService } from '../services/blocks/BlockInteractionService.js';
+import { CombatService } from '../services/combat/CombatService.js';
 
 /**
  * Container builder for fluent configuration
@@ -137,12 +141,16 @@ export class ContainerConfigurator {
 
     // Register core services as singletons
     builder
-      .registerSingleton(TOKENS.BotManager, BotManager)
+      // .registerSingleton(TOKENS.BotManager, BotManager) // Managed manually due to circular deps
       .registerSingleton(TOKENS.SkillRegistry, SkillRegistry)
       .registerSingleton(TOKENS.SkillsProvider, SkillsProvider)
+      .registerSingleton(TOKENS.ServiceRegistry, ServiceRegistry)
       .registerSingleton(TOKENS.BlockRegistry, BlockRegistry)
       .registerSingleton(TOKENS.PathfindingService, PathfindingService)
       .registerSingleton(TOKENS.InventoryService, InventoryService)
+      .registerSingleton(TOKENS.MovementService, MovementService)
+      .registerSingleton(TOKENS.BlockInteractionService, BlockInteractionService)
+      .registerSingleton(TOKENS.CombatService, CombatService)
       .registerSingleton(TOKENS.JavaInventoryStrategy, JavaInventoryStrategy)
       .registerSingleton(TOKENS.BedrockInventoryStrategy, BedrockInventoryStrategy);
 

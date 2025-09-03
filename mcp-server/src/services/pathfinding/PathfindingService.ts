@@ -1,7 +1,6 @@
 import { Vec3 } from 'vec3';
 import { injectable, singleton, inject } from 'tsyringe';
 import { BlockRegistry } from '../BlockRegistry.js';
-import { TOKENS } from '../../config/tokens.js';
 import { 
   IPathfindingService, 
   PathNode, 
@@ -28,7 +27,7 @@ export class PathfindingService implements IPathfindingService {
   ];
 
   constructor(
-    @inject(TOKENS.BlockRegistry) private blockRegistry: BlockRegistry
+    @inject(BlockRegistry) private blockRegistry: BlockRegistry
   ) {
     console.error('[PathfindingService] Initialized with BlockRegistry');
   }

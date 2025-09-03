@@ -1,11 +1,10 @@
 import { Entity } from 'prismarine-entity';
 import { Vec3 } from 'vec3';
-import { injectable, singleton, inject } from 'tsyringe';
+import { injectable, singleton } from 'tsyringe';
 import { EventEmitter } from 'events';
 
 import { AnyBot } from '../../types.js';
 import { isUnifiedBot } from '../../bots/UnifiedBot.js';
-import { TOKENS } from '../../config/tokens.js';
 import { 
   ICombatService, 
   CombatTarget, 
@@ -80,13 +79,18 @@ export class CombatService extends EventEmitter implements ICombatService {
     'trident': { name: 'trident', damage: 9, durability: 250, range: 20, type: 'trident', material: 'other' }
   };
   
-  constructor(
-    @inject(TOKENS.ThreatAssessment) private threatAssessment: ThreatAssessment,
-    @inject(TOKENS.MeleeStrategy) private meleeStrategy: MeleeStrategy,
-    @inject(TOKENS.RangedStrategy) private rangedStrategy: RangedStrategy,
-    @inject(TOKENS.DefensiveStrategy) private defensiveStrategy: DefensiveStrategy
-  ) {
+  private threatAssessment: ThreatAssessment;
+  private meleeStrategy: MeleeStrategy;
+  private rangedStrategy: RangedStrategy;
+  private defensiveStrategy: DefensiveStrategy;
+
+  constructor() {
     super();
+    // Create instances directly to avoid circular dependency issues
+    this.threatAssessment = new ThreatAssessment();
+    this.meleeStrategy = new MeleeStrategy();
+    this.rangedStrategy = new RangedStrategy();
+    this.defensiveStrategy = new DefensiveStrategy();
     this.initializeStrategies();
     console.error('[CombatService] Initialized with strategies and threat assessment');
   }

@@ -3,7 +3,6 @@ import { Vec3 } from 'vec3';
 import { UnifiedBot } from '../../bots/UnifiedBot.js';
 import { IPathfindingService } from '../pathfinding/IPathfindingService.js';
 import { BlockRegistry } from '../BlockRegistry.js';
-import { TOKENS } from '../../config/tokens.js';
 import {
   IMovementService,
   MovementState,
@@ -25,8 +24,8 @@ export class MovementService implements IMovementService {
   private readonly activeInterpolations = new Map<string, MovementInterpolation>();
 
   constructor(
-    @inject(TOKENS.PathfindingService) private readonly pathfindingService: IPathfindingService,
-    @inject(TOKENS.BlockRegistry) private readonly blockRegistry: BlockRegistry
+    @inject('PathfindingService') private readonly pathfindingService: IPathfindingService,
+    @inject(BlockRegistry) private readonly blockRegistry: BlockRegistry
   ) {}
 
   /**

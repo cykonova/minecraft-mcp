@@ -23,14 +23,18 @@ export class BlockInteractionService implements IBlockInteractionService {
   private blocksByName: Map<string, BlockProperties> = new Map();
   private version: string;
 
-  constructor(version: string = '1.20') {
-    this.version = version;
-    this.loadBlockData();
+  constructor() {
+    this.version = '1.20'; // Default version
+    this.loadBlockData().catch(error => {
+      console.error('[BlockInteractionService] Failed to load block data:', error);
+    });
   }
 
-  private loadBlockData(): void {
+  private async loadBlockData(): Promise<void> {
     try {
-      const minecraftData = require('minecraft-data')(this.version);
+      // Dynamic import to avoid require issues
+      const { default: minecraftDataModule } = await import('minecraft-data');
+      const minecraftData = minecraftDataModule(this.version);
       
       for (const block of Object.values(minecraftData.blocks) as any[]) {
         const properties: BlockProperties = {

@@ -1,15 +1,61 @@
+import { injectable, inject } from 'tsyringe';
 import { UnifiedBot } from './UnifiedBot.js';
 import { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { IPathfindingService } from '../services/pathfinding/IPathfindingService.js';
+import { IMovementService } from '../services/movement/IMovementService.js';
+import { IInventoryService } from '../services/inventory/IInventoryService.js';
+import { IBlockInteractionService } from '../services/blocks/IBlockInteractionService.js';
+import { ICombatService } from '../services/combat/ICombatService.js';
+import { TOKENS } from '../config/tokens.js';
 
 export class JavaBotWrapper implements UnifiedBot {
   username: string;
   edition: 'java' = 'java';
   _bot: Bot;
   
-  constructor(bot: Bot) {
+  private pathfindingService?: IPathfindingService;
+  private movementService?: IMovementService;
+  private inventoryService?: IInventoryService;
+  private blockInteractionService?: IBlockInteractionService;
+  private combatService?: ICombatService;
+  
+  constructor(
+    bot: Bot,
+    pathfindingService?: IPathfindingService,
+    movementService?: IMovementService,
+    inventoryService?: IInventoryService,
+    blockInteractionService?: IBlockInteractionService,
+    combatService?: ICombatService
+  ) {
     this._bot = bot;
     this.username = bot.username;
+    this.pathfindingService = pathfindingService;
+    this.movementService = movementService;
+    this.inventoryService = inventoryService;
+    this.blockInteractionService = blockInteractionService;
+    this.combatService = combatService;
+  }
+
+  /**
+   * Factory method to create JavaBotWrapper with services
+   */
+  static create(
+    bot: Bot,
+    pathfindingService?: IPathfindingService,
+    movementService?: IMovementService,
+    inventoryService?: IInventoryService,
+    blockInteractionService?: IBlockInteractionService,
+    combatService?: ICombatService
+  ): JavaBotWrapper {
+    return new JavaBotWrapper(
+      bot,
+      pathfindingService,
+      movementService,
+      inventoryService,
+      blockInteractionService,
+      combatService
+    );
   }
   
   // Delegate properties to the underlying bot
@@ -77,11 +123,30 @@ export class JavaBotWrapper implements UnifiedBot {
   }
   
   async equip(item: any, destination: string): Promise<void> {
-    await this._bot.equip(item, destination as any);
+    // Delegate to inventory service if available, otherwise fall back to direct bot method
+    if (this.inventoryService) {
+      const result = await this.inventoryService.equipItem(this, item.name || item.type, destination as any);
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+    } else {
+      await this._bot.equip(item, destination as any);
+    }
   }
   
   async tossStack(item: any, count?: number): Promise<void> {
-    await this._bot.tossStack(item);
+    // Delegate to inventory service if available, otherwise fall back to direct bot method
+    if (this.inventoryService) {
+      const result = await this.inventoryService.dropItem(this, {
+        name: item.name || item.type,
+        count: count || item.count
+      });
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+    } else {
+      await this._bot.tossStack(item);
+    }
   }
   
   on(event: string, listener: (...args: any[]) => void): void {
@@ -122,14 +187,34 @@ export class JavaBotWrapper implements UnifiedBot {
   }
   
   async activateBlock(block: any): Promise<void> {
-    return this._bot.activateBlock(block);
+    // Delegate to block interaction service if available
+    if (this.blockInteractionService) {
+      await this.blockInteractionService.activateBlock(this, block.position);
+    } else {
+      return this._bot.activateBlock(block);
+    }
   }
   
   async dig(block: any): Promise<void> {
-    return this._bot.dig(block);
+    // Delegate to block interaction service if available
+    if (this.blockInteractionService) {
+      await this.blockInteractionService.breakBlock(this, block.position);
+    } else {
+      return this._bot.dig(block);
+    }
   }
   
   async placeBlock(referenceBlock: any, faceVector: Vec3): Promise<void> {
-    return this._bot.placeBlock(referenceBlock, faceVector);
+    // Delegate to block interaction service if available
+    if (this.blockInteractionService) {
+      const targetPosition = referenceBlock.position.plus(faceVector);
+      // We need to determine block name from context - this is a simplified approach
+      await this.blockInteractionService.placeBlock(this, targetPosition, 'unknown', {
+        referenceBlock,
+        face: faceVector
+      });
+    } else {
+      return this._bot.placeBlock(referenceBlock, faceVector);
+    }
   }
 }

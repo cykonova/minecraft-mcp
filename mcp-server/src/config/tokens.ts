@@ -3,7 +3,7 @@
  */
 
 import { InjectionToken } from 'tsyringe';
-import { BotManager } from '../botManager.js';
+// import { BotManager } from '../botManager.js'; // Removed due to circular dependency
 import { SkillRegistry } from '../skillRegistry.js';
 import { SkillsProvider } from '../services/SkillsProvider.js';
 import { BlockRegistry } from '../services/BlockRegistry.js';
@@ -12,6 +12,7 @@ import { IPathfindingService } from '../services/pathfinding/IPathfindingService
 import { IInventoryService } from '../services/inventory/IInventoryService.js';
 import { ICombatService } from '../services/combat/ICombatService.js';
 import { IMovementService } from '../services/movement/IMovementService.js';
+import { IServiceRegistry } from '../services/IServiceRegistry.js';
 import { UnifiedBot } from '../bots/UnifiedBot.js';
 import { BotWithLogger, Logger } from '../types.js';
 import { ISkill } from '../skills/ISkill.js';
@@ -21,9 +22,10 @@ import { ISkill } from '../skills/ISkill.js';
  */
 export const TOKENS = {
   // Core services - using class constructors as tokens for simplicity
-  BotManager: BotManager,
+  BotManager: 'BotManager' as any, // String token due to circular dependency
   SkillRegistry: SkillRegistry,
   SkillsProvider: SkillsProvider,
+  ServiceRegistry: 'ServiceRegistry' as any,
   
   // Service registries
   BlockRegistry: BlockRegistry,
