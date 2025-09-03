@@ -47,6 +47,10 @@ export const TOKENS = {
   SkillFactory: 'SkillFactory' as any,
   SkillLoader: 'SkillLoader' as any,
   SkillValidator: 'SkillValidator' as any,
+  SkillResolver: 'SkillResolver' as any,
+  SkillDependencyGraph: 'SkillDependencyGraph' as any,
+  SkillDependencyInjectionManager: 'SkillDependencyInjectionManager' as any,
+  SkillDependencyValidator: 'SkillDependencyValidator' as any,
   
   // Configuration tokens
   ContainerConfig: 'ContainerConfig' as any,

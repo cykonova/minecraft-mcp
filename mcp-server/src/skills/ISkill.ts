@@ -1,6 +1,7 @@
 import { BotWithLogger, AnyBot } from '../types.js';
 import { ISkillContext } from './ISkillContext.js';
 import { SkillResult } from './SkillResult.js';
+import { ISkillServiceParams } from '../types/skillType.js';
 
 /**
  * Base interface for all skills - merges previous ISkill and SkillDefinition interfaces
@@ -56,7 +57,7 @@ export interface ISkill {
    * New skills should implement the context-based version
    * Legacy skills can still use the old (bot, args, serviceParams) format
    */
-  execute(botOrContext: AnyBot | ISkillContext, args?: any, serviceParams?: any): Promise<SkillResult | any>;
+  execute(botOrContext: AnyBot | ISkillContext, args?: any, serviceParams?: ISkillServiceParams): Promise<SkillResult | any>;
 }
 
 /**

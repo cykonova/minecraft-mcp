@@ -5,6 +5,8 @@ import { existsSync } from 'fs';
 import { ISkill, IJavaSkill, IBedrockSkill, SkillModule } from '../skills/ISkill.js';
 import { BotWithLogger, AnyBot } from '../types.js';
 import { isUnifiedBot } from '../bots/UnifiedBot.js';
+import { ISkillContext, SkillContextFactory } from '../skills/ISkillContext.js';
+import { ISkillServiceParams, ISkillParams } from '../types/skillType.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -106,6 +108,10 @@ export class SkillsProvider {
         return null;
       }
 
+      // Detect skill signature to determine if it's legacy or context-based
+      const skillSignature = this.detectSkillSignature(skillFunction);
+      console.error(`[SkillsProvider] Detected ${skillSignature} signature for ${skillName}`);
+      
       // Create skill wrapper
       const skill: ISkill = {
         name: skillName,
@@ -117,14 +123,53 @@ export class SkillsProvider {
           properties: {},
           required: []
         },
-        execute: async (bot: AnyBot, args: any) => {
+        execute: async (bot: AnyBot, args: any, serviceParams?: ISkillServiceParams) => {
           // Validate bot edition matches skill edition
           const botEdition = this.getBotEdition(bot);
           if (botEdition !== edition) {
             console.warn(`[SkillsProvider] Warning: Using ${edition} skill with ${botEdition} bot`);
           }
           
-          return skillFunction(bot, args);
+          console.error(`[SkillsProvider] Executing ${skillSignature} skill '${skillName}' with args:`, args);
+          
+          // Handle different skill signatures
+          if (skillSignature === 'context-based') {
+            // Create skill context for new-style skills
+            const context = SkillContextFactory.createWithDefaults(
+              bot,
+              args,
+              {
+                name: skillName,
+                edition: edition as 'java' | 'bedrock' | 'universal',
+                category,
+              }
+            );
+            
+            // Override service params if provided
+            if (serviceParams) {
+              context.serviceParams = serviceParams;
+            }
+            
+            console.error(`[SkillsProvider] Calling context-based skill with context`);
+            return skillFunction(context);
+          } else {
+            // Legacy skill signature: (bot, params, serviceParams)
+            const defaultServiceParams: ISkillServiceParams = {
+              cancelExecution: () => {
+                console.warn(`[SkillsProvider] Cancel execution called for ${skillName}`);
+              },
+              signal: undefined,
+              resetTimeout: () => {
+                console.log(`[SkillsProvider] Timeout reset for ${skillName}`);
+              },
+              getStatsData: () => ({}),
+              setStatsData: () => true,
+            };
+            
+            const finalServiceParams = serviceParams || defaultServiceParams;
+            console.error(`[SkillsProvider] Calling legacy skill with (bot, params, serviceParams)`);
+            return skillFunction(bot, args, finalServiceParams);
+          }
         }
       };
 
@@ -183,6 +228,43 @@ export class SkillsProvider {
     }
     
     return [...new Set(skills)]; // Remove duplicates
+  }
+
+  /**
+   * Detect skill signature by analyzing function parameters
+   * @param skillFunction The skill function to analyze
+   * @returns 'legacy' for (bot, params, serviceParams) or 'context-based' for (context)
+   */
+  private detectSkillSignature(skillFunction: Function): 'legacy' | 'context-based' {
+    // Get function string and extract parameters
+    const funcStr = skillFunction.toString();
+    
+    // Look for function declaration patterns
+    const asyncFunctionMatch = funcStr.match(/async\s*(?:function)?\s*[^(]*\(([^)]*)\)/);
+    const functionMatch = asyncFunctionMatch || funcStr.match(/(?:function)?\s*[^(]*\(([^)]*)\)/);
+    
+    if (functionMatch) {
+      const params = functionMatch[1]
+        .split(',')
+        .map(p => p.trim())
+        .filter(p => p.length > 0);
+      
+      console.error(`[SkillsProvider] Function parameters detected:`, params);
+      
+      // Context-based skills have 1 parameter (context)
+      // Legacy skills have 3 parameters (bot, params, serviceParams)
+      if (params.length === 1) {
+        return 'context-based';
+      } else if (params.length === 3) {
+        return 'legacy';
+      } else {
+        console.warn(`[SkillsProvider] Unusual parameter count ${params.length}, defaulting to legacy`);
+        return 'legacy';
+      }
+    }
+    
+    console.warn(`[SkillsProvider] Could not detect skill signature, defaulting to legacy`);
+    return 'legacy';
   }
 
   /**

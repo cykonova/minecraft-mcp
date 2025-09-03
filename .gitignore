@@ -41,3 +41,6 @@ yarn.lock
 *.tmp
 *.temp
 .cache/
+
+# Manual test scripts
+.test-scripts/

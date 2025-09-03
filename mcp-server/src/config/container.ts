@@ -26,6 +26,10 @@ import { BedrockInventoryStrategy } from '../services/inventory/strategies/Bedro
 import { MovementService } from '../services/movement/MovementService.js';
 import { BlockInteractionService } from '../services/blocks/BlockInteractionService.js';
 import { CombatService } from '../services/combat/CombatService.js';
+import { SkillResolver } from '../skills/SkillResolver.js';
+import { SkillDependencyGraph } from '../skills/SkillDependencyGraph.js';
+import { SkillDependencyInjectionManager } from '../skills/injection/SkillDependencyInjectionManager.js';
+import { SkillDependencyValidator } from '../skills/validation/SkillDependencyValidator.js';
 
 /**
  * Container builder for fluent configuration
@@ -152,7 +156,11 @@ export class ContainerConfigurator {
       .registerSingleton(TOKENS.BlockInteractionService, BlockInteractionService)
       .registerSingleton(TOKENS.CombatService, CombatService)
       .registerSingleton(TOKENS.JavaInventoryStrategy, JavaInventoryStrategy)
-      .registerSingleton(TOKENS.BedrockInventoryStrategy, BedrockInventoryStrategy);
+      .registerSingleton(TOKENS.BedrockInventoryStrategy, BedrockInventoryStrategy)
+      .registerSingleton(TOKENS.SkillResolver, SkillResolver)
+      .registerSingleton(TOKENS.SkillDependencyGraph, SkillDependencyGraph)
+      .registerSingleton(TOKENS.SkillDependencyInjectionManager, SkillDependencyInjectionManager)
+      .registerSingleton(TOKENS.SkillDependencyValidator, SkillDependencyValidator);
 
     // Register configuration instances
     builder.registerInstance(TOKENS.ContainerConfig, {

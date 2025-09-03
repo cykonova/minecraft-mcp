@@ -447,8 +447,8 @@ function createSkillExecutor(skillName: string, skillsProvider: SkillsProvider) 
             let result;
 
             try {
-                // Skills loaded via SkillsProvider already handle the execution
-                result = await skill.execute(bot, args);
+                // Skills loaded via SkillsProvider now support serviceParams
+                result = await skill.execute(bot, args, serviceParams);
                 console.error(`[MCP] Skill '${skillName}' returned:`, result);
             } finally {
                 // Always remove event listeners
