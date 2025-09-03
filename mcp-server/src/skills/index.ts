@@ -27,5 +27,15 @@ export { BaseCompositeSkill } from './ICompositeSkill.js';
 export { AtomicSkill } from './AtomicSkill.js';
 export { CompositeSkill } from './CompositeSkill.js';
 
+// Atomic Skills
+export * from './atomic/index.js';
+
+// Composite Skills
+export * from './composite/index.js';
+
+// Dependency injection system
+export * from './decorators/skillDependency.js';
+export * from './dependency-system.js';
+
 // Utility types for skill creation
 export type SkillConstructor<T = any> = new (...args: any[]) => T;

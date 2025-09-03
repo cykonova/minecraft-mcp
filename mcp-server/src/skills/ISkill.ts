@@ -26,7 +26,7 @@ export interface ISkill {
   /**
    * Skill category
    */
-  category: 'verified' | 'library';
+  category: 'verified' | 'library' | 'composite';
 
   /**
    * Skill type for the new hierarchy
@@ -131,7 +131,7 @@ export function createSkillDefinition(
   name: string,
   description: string,
   edition: 'java' | 'bedrock' | 'universal',
-  category: 'verified' | 'library',
+  category: 'verified' | 'library' | 'composite',
   inputSchema: { type: string; properties: Record<string, any>; required: string[] },
   execute: (bot: AnyBot, args: any) => Promise<any>
 ): ISkill {

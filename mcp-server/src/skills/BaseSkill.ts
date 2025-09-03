@@ -51,7 +51,7 @@ export abstract class BaseSkill implements ISkill {
     abstract readonly name: string;
     abstract readonly description: string;
     abstract readonly edition: 'java' | 'bedrock' | 'universal';
-    abstract readonly category: 'verified' | 'library';
+    abstract readonly category: 'verified' | 'library' | 'composite';
     readonly version: string = '1.0.0';
     readonly dependencies: string[] = [];
 

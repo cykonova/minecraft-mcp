@@ -26,9 +26,14 @@ export interface ISkillContext {
     metadata: {
         name: string;
         edition: 'java' | 'bedrock' | 'universal';
-        category: 'verified' | 'library';
+        category: 'verified' | 'library' | 'composite';
         version?: string;
     };
+
+    /**
+     * Abort signal for cancelling execution
+     */
+    signal?: AbortSignal;
 }
 
 /**
@@ -45,7 +50,7 @@ export class SkillContextFactory {
         metadata: {
             name: string;
             edition: 'java' | 'bedrock' | 'universal';
-            category: 'verified' | 'library';
+            category: 'verified' | 'library' | 'composite';
             version?: string;
         }
     ): ISkillContext {
@@ -66,7 +71,7 @@ export class SkillContextFactory {
         metadata: {
             name: string;
             edition: 'java' | 'bedrock' | 'universal';
-            category: 'verified' | 'library';
+            category: 'verified' | 'library' | 'composite';
             version?: string;
         }
     ): ISkillContext {

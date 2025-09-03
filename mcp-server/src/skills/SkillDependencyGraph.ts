@@ -33,7 +33,7 @@ export interface SkillNode {
     /** Skill metadata */
     metadata: {
         edition: 'java' | 'bedrock' | 'universal';
-        category: 'verified' | 'library';
+        category: 'verified' | 'library' | 'composite';
         version?: string;
         type?: 'atomic' | 'composite';
     };
