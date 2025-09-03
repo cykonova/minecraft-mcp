@@ -1,5 +1,6 @@
 import { Bot } from 'mineflayer';
 import { Pathfinder, Movements } from 'mineflayer-pathfinder';
+import { UnifiedBot } from './bots/UnifiedBot.js';
 
 // Custom bot events that skills emit
 declare module 'mineflayer' {
@@ -92,4 +93,7 @@ declare module 'mineflayer' {
         totalProgressSeconds?: number;
         progressSeconds?: number;
     }
-} 
+}
+
+// Unified bot type that supports both Java and Bedrock
+export type AnyBot = BotWithLogger | UnifiedBot; 

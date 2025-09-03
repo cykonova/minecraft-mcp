@@ -1,25 +1,29 @@
 import { Bot } from 'mineflayer';
-import { BotWithLogger } from './types.js';
+import { BotWithLogger, AnyBot } from './types.js';
+import { UnifiedBot, isUnifiedBot } from './bots/UnifiedBot.js';
 
 interface BotInstance {
     id: string;
     username: string;
-    bot: BotWithLogger;
+    bot: AnyBot;
     createdAt: Date;
+    edition: 'java' | 'bedrock';
 }
 
 export class BotManager {
     private bots: Map<string, BotInstance> = new Map();
     private activeBotId: string | null = null;
 
-    addBot(username: string, bot: BotWithLogger): string {
+    addBot(username: string, bot: AnyBot): string {
         const id = `bot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const edition = isUnifiedBot(bot) ? bot.edition : 'java';
 
         this.bots.set(id, {
             id,
             username,
             bot,
-            createdAt: new Date()
+            createdAt: new Date(),
+            edition
         });
 
         // Set as active bot if it's the first one
@@ -27,7 +31,7 @@ export class BotManager {
             this.activeBotId = id;
         }
 
-        console.error(`[BotManager] Added bot '${username}' with ID: ${id}`);
+        console.error(`[BotManager] Added ${edition} bot '${username}' with ID: ${id}`);
         console.error(`[BotManager] Active bot is now: ${this.activeBotId}`);
         console.error(`[BotManager] Total bots: ${this.bots.size}`);
 
@@ -78,9 +82,13 @@ export class BotManager {
         }
 
         if (botInstance) {
-            console.error(`[BotManager] Removing bot '${botInstance.username}' with ID: ${botInstance.id}`);
+            console.error(`[BotManager] Removing ${botInstance.edition} bot '${botInstance.username}' with ID: ${botInstance.id}`);
             try {
-                botInstance.bot.quit();
+                if (isUnifiedBot(botInstance.bot)) {
+                    botInstance.bot.quit();
+                } else {
+                    (botInstance.bot as BotWithLogger).quit();
+                }
             } catch (error) {
                 // Bot might already be disconnected
             }
@@ -95,12 +103,12 @@ export class BotManager {
         }
     }
 
-    getBot(id: string): BotWithLogger | null {
+    getBot(id: string): AnyBot | null {
         const botInstance = this.bots.get(id);
         return botInstance ? botInstance.bot : null;
     }
 
-    getActiveBot(): BotWithLogger | null {
+    getActiveBot(): AnyBot | null {
         if (!this.activeBotId) {
             console.error(`[BotManager] No active bot available`);
             return null;
@@ -125,7 +133,7 @@ export class BotManager {
         return Array.from(this.bots.values());
     }
 
-    getBotByUsername(username: string): BotWithLogger | null {
+    getBotByUsername(username: string): AnyBot | null {
         for (const instance of this.bots.values()) {
             if (instance.username === username) {
                 return instance.bot;

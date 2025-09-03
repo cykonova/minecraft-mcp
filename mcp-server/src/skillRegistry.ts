@@ -367,27 +367,38 @@ export async function loadSkills(): Promise<SkillDefinition[]> {
 }
 
 // Create a skill executor that loads and runs the actual skill code
-function createSkillExecutor(skillName: string) {
+function createSkillExecutor(skillName: string, edition: 'java' | 'bedrock' = 'java') {
     return async (bot: BotWithLogger, args: any): Promise<any> => {
         console.error(`[MCP] Executing skill '${skillName}' with args:`, args);
 
         try {
+            // Determine the edition of the bot
+            const botEdition = 'edition' in bot && (bot as any).edition === 'bedrock' ? 'bedrock' : 'java';
+            
             // Path to the compiled skill bundled with the MCP server
             // __dirname is at: mcp-server/dist
-            // Skills are at: mcp-server/dist/skills/verified
-            const skillModulePath = join(__dirname, 'skills', 'verified', `${skillName}.js`);
+            // Skills are at: mcp-server/dist/skills/{edition}/verified
+            const skillModulePath = join(__dirname, 'skills', botEdition, 'verified', `${skillName}.js`);
             console.error(`[MCP] Loading skill from: ${skillModulePath}`);
 
-            // Check if the skill file exists
+            // Check if the skill file exists in verified, if not try library
+            let finalSkillPath = skillModulePath;
             if (!existsSync(skillModulePath)) {
-                throw new Error(
-                    `Skill implementation not found at ${skillModulePath}. ` +
-                    `Please ensure the MCP server was built correctly with 'npm run build'.`
-                );
+                // Try library folder
+                const libraryPath = join(__dirname, 'skills', botEdition, 'library', `${skillName}.js`);
+                if (existsSync(libraryPath)) {
+                    finalSkillPath = libraryPath;
+                    console.error(`[MCP] Using library skill from: ${libraryPath}`);
+                } else {
+                    throw new Error(
+                        `Skill implementation not found at ${skillModulePath} or library path. ` +
+                        `Please ensure the MCP server was built correctly with 'npm run build'.`
+                    );
+                }
             }
 
             // Convert file path to file URL for proper ES module import
-            const skillModuleUrl = pathToFileURL(skillModulePath).href;
+            const skillModuleUrl = pathToFileURL(finalSkillPath).href;
             console.error(`[MCP] Importing skill from URL: ${skillModuleUrl}`);
 
             const skillModule = await import(skillModuleUrl);

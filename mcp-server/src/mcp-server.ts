@@ -43,7 +43,11 @@ import { Bot } from 'mineflayer';
 import { createBot as mineflayerCreateBot } from 'mineflayer';
 import { loadSkills, SkillRegistry } from './skillRegistry.js';
 import { BotManager } from './botManager.js';
-import { initializeChatHistory } from './skills/verified/readChat.js';
+import { initializeChatHistory } from './skills/java/verified/readChat.js';
+import { JavaBotWrapper } from './bots/JavaBotWrapper.js';
+import { BedrockBotWrapper } from './bots/BedrockBotWrapper.js';
+import { UnifiedBot } from './bots/UnifiedBot.js';
+import { BotWithLogger } from './types.js';
 
 // Parse command line arguments (now optional)
 program
@@ -85,7 +89,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     const tools = [
         {
             name: "joinGame",
-            description: "Spawn a bot into the Minecraft game",
+            description: "Spawn a bot into the Minecraft game (supports both Java and Bedrock editions)",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -99,7 +103,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     },
                     port: {
                         type: "number",
-                        description: "Minecraft server port (defaults to 25565 or command line option)"
+                        description: "Minecraft server port (defaults to 25565 for Java, 19132 for Bedrock)"
+                    },
+                    edition: {
+                        type: "string",
+                        enum: ["java", "bedrock"],
+                        description: "Minecraft edition to connect to (defaults to 'java')"
+                    },
+                    offline: {
+                        type: "boolean",
+                        description: "Use offline mode (Bedrock only, defaults to true)"
+                    },
+                    version: {
+                        type: "string",
+                        description: "Minecraft version (optional, auto-detect for Java)"
                     }
                 },
                 required: ["username"]
@@ -141,98 +158,145 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
     // Handle joinGame tool
     if (name === "joinGame") {
         try {
-            const { username, host, port } = args as { username: string; host?: string; port?: number };
+            const { username, host, port, edition = 'java', offline = true, version } = args as { 
+                username: string; 
+                host?: string; 
+                port?: number;
+                edition?: 'java' | 'bedrock';
+                offline?: boolean;
+                version?: string;
+            };
 
             // Use provided values, fall back to command line options, then defaults
             const serverHost = host || options.host || 'localhost';
-            const serverPort = port || (options.port ? parseInt(options.port) : 25565);
+            const defaultPort = edition === 'bedrock' ? 19132 : 25565;
+            const serverPort = port || (options.port ? parseInt(options.port) : defaultPort);
 
-            console.error(`[MCP] Attempting to spawn bot '${username}' on ${serverHost}:${serverPort}`);
+            console.error(`[MCP] Attempting to spawn ${edition} bot '${username}' on ${serverHost}:${serverPort}`);
 
-            // Create a new bot
-            const bot = mineflayerCreateBot({
-                host: serverHost,
-                port: serverPort,
-                username: username
-                // Auto-detect version by not specifying it
-            }) as any; // Type assertion to allow adding custom properties
+            let unifiedBot: UnifiedBot;
+            let botId: string;
 
-            // Dynamically import and load plugins
-            const [pathfinderModule, pvpModule, toolModule, collectBlockModule] = await Promise.all([
-                import('mineflayer-pathfinder'),
-                import('mineflayer-pvp'),
-                import('mineflayer-tool'),
-                import('mineflayer-collectblock')
-            ]);
+            if (edition === 'bedrock') {
+                // Create Bedrock bot
+                const bedrockBot = await BedrockBotWrapper.create({
+                    host: serverHost,
+                    port: serverPort,
+                    username: username,
+                    offline: offline,
+                    version: version || '1.20.80'
+                });
 
-            // Load plugins
-            bot.loadPlugin(pathfinderModule.pathfinder);
-            bot.loadPlugin(pvpModule.plugin);
-            bot.loadPlugin(toolModule.plugin);
-            bot.loadPlugin(collectBlockModule.plugin);
+                // Add logger to match Java bot structure
+                (bedrockBot as any).logger = {
+                    info: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : ${message}`);
+                    },
+                    error: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : ERROR: ${message}`);
+                    },
+                    warn: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : WARN: ${message}`);
+                    },
+                    debug: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : DEBUG: ${message}`);
+                    }
+                };
 
-            // Add Movements constructor to bot for skills that create movement configurations
-            bot.Movements = pathfinderModule.Movements;
+                unifiedBot = bedrockBot;
+                botId = botManager.addBot(username, bedrockBot as any);
+            } else {
+                // Create Java bot (existing logic)
+                const bot = mineflayerCreateBot({
+                    host: serverHost,
+                    port: serverPort,
+                    username: username,
+                    version: version
+                    // Auto-detect version if not specified
+                }) as any;
 
-            // Add a logger to the bot
-            bot.logger = {
-                info: (message: string) => {
-                    const timestamp = new Date().toISOString();
-                    console.error(`[${username}] ${timestamp} : ${message}`);
-                },
-                error: (message: string) => {
-                    const timestamp = new Date().toISOString();
-                    console.error(`[${username}] ${timestamp} : ERROR: ${message}`);
-                },
-                warn: (message: string) => {
-                    const timestamp = new Date().toISOString();
-                    console.error(`[${username}] ${timestamp} : WARN: ${message}`);
-                },
-                debug: (message: string) => {
-                    const timestamp = new Date().toISOString();
-                    console.error(`[${username}] ${timestamp} : DEBUG: ${message}`);
-                }
-            };
+                // Dynamically import and load plugins
+                const [pathfinderModule, pvpModule, toolModule, collectBlockModule] = await Promise.all([
+                    import('mineflayer-pathfinder'),
+                    import('mineflayer-pvp'),
+                    import('mineflayer-tool'),
+                    import('mineflayer-collectblock')
+                ]);
 
-            // Register the bot
-            const botId = botManager.addBot(username, bot);
+                // Load plugins
+                bot.loadPlugin(pathfinderModule.pathfinder);
+                bot.loadPlugin(pvpModule.plugin);
+                bot.loadPlugin(toolModule.plugin);
+                bot.loadPlugin(collectBlockModule.plugin);
 
-            // Wait for spawn
-            await Promise.race([
-                new Promise<void>((resolve, reject) => {
-                    bot.once('spawn', () => {
-                        console.error(`[MCP] Bot ${username} spawned, initializing additional properties...`);
+                // Add Movements constructor to bot for skills that create movement configurations
+                bot.Movements = pathfinderModule.Movements;
 
-                        // Initialize properties that skills expect
-                        bot.exploreChunkSize = 16; // INTERNAL_MAP_CHUNK_SIZE
-                        bot.knownChunks = bot.knownChunks || {};
-                        bot.currentSkillCode = '';
-                        bot.currentSkillData = {};
+                // Add a logger to the bot
+                bot.logger = {
+                    info: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : ${message}`);
+                    },
+                    error: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : ERROR: ${message}`);
+                    },
+                    warn: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : WARN: ${message}`);
+                    },
+                    debug: (message: string) => {
+                        const timestamp = new Date().toISOString();
+                        console.error(`[${username}] ${timestamp} : DEBUG: ${message}`);
+                    }
+                };
 
-                        // Set constants that skills use
-                        bot.nearbyBlockXZRange = 20; // NEARBY_BLOCK_XZ_RANGE
-                        bot.nearbyBlockYRange = 10; // NEARBY_BLOCK_Y_RANGE
-                        bot.nearbyPlayerRadius = 10; // NEARBY_PLAYER_RADIUS
-                        bot.hearingRadius = 30; // HEARING_RADIUS
-                        bot.nearbyEntityRadius = 10; // NEARBY_ENTITY_RADIUS
+                // Wait for spawn
+                await Promise.race([
+                    new Promise<void>((resolve, reject) => {
+                        bot.once('spawn', () => {
+                            console.error(`[MCP] Bot ${username} spawned, initializing additional properties...`);
 
-                        // Initialize chat history tracking
-                        initializeChatHistory(bot);
+                            // Initialize properties that skills expect
+                            bot.exploreChunkSize = 16; // INTERNAL_MAP_CHUNK_SIZE
+                            bot.knownChunks = bot.knownChunks || {};
+                            bot.currentSkillCode = '';
+                            bot.currentSkillData = {};
 
-                        resolve();
-                    });
-                    bot.once('error', (err: Error) => reject(err));
-                    bot.once('kicked', (reason: string) => reject(new Error(`Bot kicked: ${reason}`)));
-                }),
-                new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Bot spawn timed out after 30 seconds')), 30000)
-                )
-            ]);
+                            // Set constants that skills use
+                            bot.nearbyBlockXZRange = 20; // NEARBY_BLOCK_XZ_RANGE
+                            bot.nearbyBlockYRange = 10; // NEARBY_BLOCK_Y_RANGE
+                            bot.nearbyPlayerRadius = 10; // NEARBY_PLAYER_RADIUS
+                            bot.hearingRadius = 30; // HEARING_RADIUS
+                            bot.nearbyEntityRadius = 10; // NEARBY_ENTITY_RADIUS
+
+                            // Initialize chat history tracking
+                            initializeChatHistory(bot);
+
+                            resolve();
+                        });
+                        bot.once('error', (err: Error) => reject(err));
+                        bot.once('kicked', (reason: string) => reject(new Error(`Bot kicked: ${reason}`)));
+                    }),
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error('Bot spawn timed out after 30 seconds')), 30000)
+                    )
+                ]);
+
+                // Wrap Java bot in unified interface
+                unifiedBot = new JavaBotWrapper(bot);
+                botId = botManager.addBot(username, unifiedBot as any);
+            }
 
             return {
                 content: [{
                     type: "text",
-                    text: `Bot '${username}' successfully joined the game on ${serverHost}:${serverPort}. Bot ID: ${botId}`
+                    text: `${edition === 'bedrock' ? 'Bedrock' : 'Java'} bot '${username}' successfully joined the game on ${serverHost}:${serverPort}. Bot ID: ${botId}`
                 }]
             };
         } catch (error) {
@@ -300,9 +364,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
                 throw new Error("No active bot. Please use 'joinGame' first to spawn a bot.");
             }
 
+            // Check if bot is a UnifiedBot (Bedrock) - skills currently only work with Java
+            const isUnified = 'edition' in bot && (bot as any).edition === 'bedrock';
+            if (isUnified) {
+                throw new Error(`Skill '${name}' is not yet supported for Bedrock edition bots. Most skills currently only work with Java edition.`);
+            }
+
             // Execute the skill with 30-second timeout
             const result = await Promise.race([
-                skill.execute(bot, args),
+                skill.execute(bot as BotWithLogger, args),
                 new Promise<never>((_, reject) =>
                     setTimeout(() => reject(new Error('Skill execution timed out after 30 seconds')), 30000)
                 )

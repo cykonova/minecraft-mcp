@@ -1,15 +1,16 @@
 # Fundamental Labs/Minecraft Client
 
-This library is the Client library for a Minecraft Game Skills and MCP Integration.
+This library is the Client library for a Minecraft Game Skills and MCP Integration, supporting both Java and Bedrock editions.
 
 Fairies MCP Client (<https://fairies.ai/>) also supports direct connection with a single click.
 
 ## Features
 
-- **Full Minecraft Control**: Connect AI agents to Minecraft servers and control bots
-- **30 Verified Skills**: Pre-built, tested skills for common Minecraft tasks
+- **Full Minecraft Control**: Connect AI agents to both Java and Bedrock Minecraft servers
+- **Dual Edition Support**: Native support for both Java Edition and Bedrock Edition
+- **30 Verified Skills**: Pre-built, tested skills for common Minecraft tasks (currently Java-only)
 - **Flexible Connection**: Connect to any Minecraft server with optional per-bot configuration
-- **Multi-Bot Support**: Manage multiple bots simultaneously
+- **Multi-Bot Support**: Manage multiple bots simultaneously across different editions
 - **MCP Standard**: Compatible with any MCP client (Claude Desktop, etc.)
 
 ## Installation
@@ -104,10 +105,13 @@ npx @modelcontextprotocol/inspector node dist/mcp-server.js -- -p 25565
 
 ### Bot Management
 
-- **joinGame** - Spawn a new bot into the Minecraft game
+- **joinGame** - Spawn a new bot into the Minecraft game (Java or Bedrock)
   - `username` (required): Bot's username
   - `host` (optional): Server host (defaults to 'localhost' or command line option)
-  - `port` (optional): Server port (defaults to 25565 or command line option)
+  - `port` (optional): Server port (defaults to 25565 for Java, 19132 for Bedrock)
+  - `edition` (optional): 'java' or 'bedrock' (defaults to 'java')
+  - `offline` (optional): Use offline mode for Bedrock (defaults to true)
+  - `version` (optional): Minecraft version (auto-detect for Java, defaults to '1.20.80' for Bedrock)
 
 - **leaveGame** - Disconnect bot(s) from the game
   - `username` (optional): Specific bot to disconnect
@@ -183,9 +187,30 @@ npx @modelcontextprotocol/inspector node dist/mcp-server.js -- -p 25565
 
 When integrated with an MCP client, you can control the bot like this:
 
+### Java Edition (default)
 ```javascript
-// First, spawn a bot
+// Spawn a Java Edition bot
 await client.callTool('joinGame', { username: 'MyBot' });
+
+// Or explicitly specify Java edition
+await client.callTool('joinGame', { 
+  username: 'MyJavaBot',
+  edition: 'java',
+  host: 'play.example.com',
+  port: 25565
+});
+```
+
+### Bedrock Edition
+```javascript
+// Spawn a Bedrock Edition bot
+await client.callTool('joinGame', { 
+  username: 'MyBedrockBot',
+  edition: 'bedrock',
+  host: 'play.example.com',
+  port: 19132,
+  offline: true  // Use offline mode (no Microsoft account required)
+});
 
 // Make the bot mine some wood
 await client.callTool('mineResource', { name: 'oak_log', count: 10 });
@@ -260,9 +285,11 @@ await client.callTool('sendChat', {
 The MCP server:
 
 - Uses stdio transport for communication with AI clients
+- Supports both Java Edition (via Mineflayer) and Bedrock Edition (via bedrock-protocol)
 - Dynamically loads skills from the verified skills directory
-- Manages multiple bot instances (currently uses the first bot for all operations)
-- Provides a unified interface for all bot actions
+- Manages multiple bot instances across both editions
+- Provides a unified interface for bot actions (with edition-specific implementations)
+- Skills currently support Java Edition bots only (Bedrock skill support coming soon)
 
 ## Requirements
 

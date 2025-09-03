@@ -8,14 +8,15 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "bedrock-protocol": "^3.48.1",
+    "fastest-levenshtein": "^1.0.16",
+    "minecraft-data": "^3.59.3",
     "mineflayer": "^4.14.0",
     "mineflayer-collectblock": "file:../mineflayer-collectblock",
     "mineflayer-pathfinder": "file:../mineflayer-pathfinder",
     "mineflayer-pvp": "file:../mineflayer-pvp",
     "mineflayer-tool": "^1.2.0",
-    "minecraft-data": "^3.59.3",
-    "vec3": "^0.1.7",
-    "fastest-levenshtein": "^1.0.16"
+    "vec3": "^0.1.7"
   },
   "devDependencies": {
     "@types/node": "^22.5.1",
