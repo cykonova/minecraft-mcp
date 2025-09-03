@@ -2,6 +2,13 @@ import { UnifiedBot } from './UnifiedBot.js';
 import { createClient, Client } from 'bedrock-protocol';
 import { Vec3 } from 'vec3';
 
+interface ChatMessage {
+  timestamp: number;
+  username: string;
+  message: string;
+  type: string;
+}
+
 export class BedrockBotWrapper implements UnifiedBot {
   username: string;
   edition: 'bedrock' = 'bedrock';
@@ -14,6 +21,7 @@ export class BedrockBotWrapper implements UnifiedBot {
   private entities: Map<number, any> = new Map();
   private chunks: Map<string, any> = new Map();
   private eventHandlers: Map<string, Set<Function>> = new Map();
+  private chatHistory: ChatMessage[] = [];
   
   health?: number;
   food?: number;
@@ -95,9 +103,23 @@ export class BedrockBotWrapper implements UnifiedBot {
     
     // Track chat messages
     this._bot.on('text', (packet: any) => {
-      if (packet.type === 'chat' || packet.type === 'raw') {
+      if (packet.type === 'chat' || packet.type === 'raw' || packet.type === 'translation') {
         const message = packet.message || packet.text || '';
         const sender = packet.source_name || 'Server';
+        
+        // Store in chat history
+        this.chatHistory.push({
+          timestamp: Date.now(),
+          username: sender,
+          message: message,
+          type: packet.type
+        });
+        
+        // Keep only last 100 messages
+        if (this.chatHistory.length > 100) {
+          this.chatHistory.shift();
+        }
+        
         this.emit('chat', { 
           message, 
           username: sender,
@@ -285,7 +307,7 @@ export class BedrockBotWrapper implements UnifiedBot {
     this._bot.off(event as any, listener);
   }
   
-  private emit(event: string, ...args: any[]): void {
+  emit(event: string, ...args: any[]): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       for (const handler of handlers) {
@@ -339,5 +361,23 @@ export class BedrockBotWrapper implements UnifiedBot {
       slots: [],
       selected: 0
     };
+  }
+  
+  getChatHistory(): ChatMessage[] {
+    return [...this.chatHistory];
+  }
+  
+  addChatMessage(username: string, message: string, type: string = 'manual'): void {
+    this.chatHistory.push({
+      timestamp: Date.now(),
+      username,
+      message,
+      type
+    });
+    
+    // Keep only last 100 messages
+    if (this.chatHistory.length > 100) {
+      this.chatHistory.shift();
+    }
   }
 }

@@ -80,16 +80,7 @@ export class SkillsProvider {
       }
     }
 
-    // If Bedrock skill not found, try to fall back to Java with a warning
-    if (edition === 'bedrock') {
-      console.error(`[SkillsProvider] Bedrock skill '${skillName}' not found, attempting Java fallback`);
-      const javaSkill = await this.getSkill(skillName, 'java');
-      if (javaSkill) {
-        console.warn(`[SkillsProvider] WARNING: Using Java skill '${skillName}' for Bedrock bot - may not work correctly`);
-        return javaSkill;
-      }
-    }
-
+    // No fallback - skill must exist for the specified edition
     console.error(`[SkillsProvider] Skill '${skillName}' not found for ${edition} edition`);
     return null;
   }

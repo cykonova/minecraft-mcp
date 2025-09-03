@@ -46,7 +46,6 @@ import { Bot } from 'mineflayer';
 import { createBot as mineflayerCreateBot } from 'mineflayer';
 import { loadSkills, SkillRegistry } from './skillRegistry.js';
 import { BotManager } from './botManager.js';
-import { initializeChatHistory } from './skills/java/verified/readChat.js';
 import { JavaBotWrapper } from './bots/JavaBotWrapper.js';
 import { BedrockBotWrapper } from './bots/BedrockBotWrapper.js';
 import { UnifiedBot } from './bots/UnifiedBot.js';
@@ -283,8 +282,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
                             bot.hearingRadius = 30; // HEARING_RADIUS
                             bot.nearbyEntityRadius = 10; // NEARBY_ENTITY_RADIUS
 
-                            // Initialize chat history tracking
-                            initializeChatHistory(bot);
+                            // Chat history will be initialized automatically by readChat skill when first used
 
                             resolve();
                         });

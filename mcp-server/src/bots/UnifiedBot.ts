@@ -41,6 +41,7 @@ export interface UnifiedBot {
   on(event: string, listener: (...args: any[]) => void): void;
   once(event: string, listener: (...args: any[]) => void): void;
   off(event: string, listener: (...args: any[]) => void): void;
+  emit(event: string, ...args: any[]): void;
   
   // Control
   quit(): void;
@@ -53,6 +54,13 @@ export interface UnifiedBot {
   activateBlock?(block: any): Promise<void>;
   dig?(block: any): Promise<void>;
   placeBlock?(referenceBlock: any, faceVector: Vec3): Promise<void>;
+  
+  // Chat history (Bedrock-specific but can be implemented for Java too)
+  getChatHistory?(): Array<{ timestamp: number; username: string; message: string; type: string }>;
+  addChatMessage?(username: string, message: string, type: string): void;
+  
+  // Player list (optional)
+  getPlayers?(): any[];
   
   // Raw bot access (for edition-specific operations)
   _bot: Bot | any; // Bot for Java, Client for Bedrock

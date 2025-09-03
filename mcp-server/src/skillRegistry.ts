@@ -388,9 +388,12 @@ function createSkillExecutor(skillName: string, skillsProvider: SkillsProvider) 
             const skill = await skillsProvider.getSkillForBot(skillName, bot);
             
             if (!skill) {
+                // Determine the bot's edition for a clearer error message
+                const botEdition = 'edition' in bot ? (bot as any).edition : 'java';
                 throw new Error(
-                    `Skill '${skillName}' not found for bot edition. ` +
-                    `Please ensure the skill is implemented for this edition.`
+                    `SKILL_NOT_AVAILABLE: The skill '${skillName}' is not implemented for ${botEdition.toUpperCase()} Edition. ` +
+                    `This skill is currently only available for specific Minecraft editions. ` +
+                    `Please use a different skill or connect a bot of the appropriate edition.`
                 );
             }
             

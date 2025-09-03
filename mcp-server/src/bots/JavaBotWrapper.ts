@@ -96,6 +96,10 @@ export class JavaBotWrapper implements UnifiedBot {
     this._bot.off(event as any, listener);
   }
   
+  emit(event: string, ...args: any[]): void {
+    this._bot.emit(event as any, ...args);
+  }
+  
   quit(): void {
     this._bot.quit();
   }
