@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Import reflect-metadata FIRST for TSyringe
+import 'reflect-metadata';
+
 // Redirect ALL console.log output to stderr to prevent stdout pollution
 // This MUST be done before any other imports or code
 const originalConsoleLog = console.log;
@@ -48,6 +51,8 @@ import { JavaBotWrapper } from './bots/JavaBotWrapper.js';
 import { BedrockBotWrapper } from './bots/BedrockBotWrapper.js';
 import { UnifiedBot } from './bots/UnifiedBot.js';
 import { BotWithLogger } from './types.js';
+import { configureContainer, getContainer } from './container.js';
+import { SkillsProvider } from './services/SkillsProvider.js';
 
 // Parse command line arguments (now optional)
 program
@@ -70,15 +75,18 @@ const server = new Server(
     }
 );
 
-// Bot manager to handle multiple bot instances
-const botManager = new BotManager();
+// Configure dependency injection
+configureContainer();
 
-// Skill registry to manage available skills
-const skillRegistry = new SkillRegistry();
+// Get instances from DI container
+const container = getContainer();
+const botManager = container.resolve(BotManager);
+const skillRegistry = container.resolve(SkillRegistry);
+const skillsProvider = container.resolve(SkillsProvider);
 
 // Initialize skills
 async function initializeSkills() {
-    const skills = await loadSkills();
+    const skills = await loadSkills(skillsProvider);
     for (const skill of skills) {
         skillRegistry.registerSkill(skill);
     }

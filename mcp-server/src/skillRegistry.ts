@@ -1,9 +1,12 @@
+import { injectable, singleton, inject } from 'tsyringe';
 import { Bot } from 'mineflayer';
-import { BotWithLogger } from './types.js';
+import { BotWithLogger, AnyBot } from './types.js';
 import { readdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { existsSync } from 'fs';
+import { SkillsProvider } from './services/SkillsProvider.js';
+import { ISkill } from './skills/ISkill.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -15,11 +18,17 @@ export interface SkillDefinition {
         properties: Record<string, any>;
         required: string[];
     };
-    execute: (bot: BotWithLogger, args: any) => Promise<any>;
+    execute: (bot: AnyBot, args: any) => Promise<any>;
 }
 
+@injectable()
+@singleton()
 export class SkillRegistry {
     private skills: Map<string, SkillDefinition> = new Map();
+    
+    constructor(
+        @inject(SkillsProvider) private skillsProvider: SkillsProvider
+    ) {}
 
     registerSkill(skill: SkillDefinition): void {
         this.skills.set(skill.name, skill);
@@ -347,8 +356,11 @@ const SKILL_METADATA: Record<string, { description: string; params: Record<strin
     }
 };
 
-export async function loadSkills(): Promise<SkillDefinition[]> {
+export async function loadSkills(skillsProvider?: SkillsProvider): Promise<SkillDefinition[]> {
     const skills: SkillDefinition[] = [];
+    
+    // If no provider passed, create a new one (for backward compatibility)
+    const provider = skillsProvider || new SkillsProvider();
 
     for (const [skillName, metadata] of Object.entries(SKILL_METADATA)) {
         skills.push({
@@ -359,56 +371,30 @@ export async function loadSkills(): Promise<SkillDefinition[]> {
                 properties: metadata.params,
                 required: metadata.required
             },
-            execute: createSkillExecutor(skillName)
+            execute: createSkillExecutor(skillName, provider)
         });
     }
 
     return skills;
 }
 
-// Create a skill executor that loads and runs the actual skill code
-function createSkillExecutor(skillName: string, edition: 'java' | 'bedrock' = 'java') {
-    return async (bot: BotWithLogger, args: any): Promise<any> => {
+// Create a skill executor that uses SkillsProvider to load and run the skill
+function createSkillExecutor(skillName: string, skillsProvider: SkillsProvider) {
+    return async (bot: AnyBot, args: any): Promise<any> => {
         console.error(`[MCP] Executing skill '${skillName}' with args:`, args);
 
         try {
-            // Determine the edition of the bot
-            const botEdition = 'edition' in bot && (bot as any).edition === 'bedrock' ? 'bedrock' : 'java';
+            // Get the skill from the provider
+            const skill = await skillsProvider.getSkillForBot(skillName, bot);
             
-            // Path to the compiled skill bundled with the MCP server
-            // __dirname is at: mcp-server/dist
-            // Skills are at: mcp-server/dist/skills/{edition}/verified
-            const skillModulePath = join(__dirname, 'skills', botEdition, 'verified', `${skillName}.js`);
-            console.error(`[MCP] Loading skill from: ${skillModulePath}`);
-
-            // Check if the skill file exists in verified, if not try library
-            let finalSkillPath = skillModulePath;
-            if (!existsSync(skillModulePath)) {
-                // Try library folder
-                const libraryPath = join(__dirname, 'skills', botEdition, 'library', `${skillName}.js`);
-                if (existsSync(libraryPath)) {
-                    finalSkillPath = libraryPath;
-                    console.error(`[MCP] Using library skill from: ${libraryPath}`);
-                } else {
-                    throw new Error(
-                        `Skill implementation not found at ${skillModulePath} or library path. ` +
-                        `Please ensure the MCP server was built correctly with 'npm run build'.`
-                    );
-                }
+            if (!skill) {
+                throw new Error(
+                    `Skill '${skillName}' not found for bot edition. ` +
+                    `Please ensure the skill is implemented for this edition.`
+                );
             }
-
-            // Convert file path to file URL for proper ES module import
-            const skillModuleUrl = pathToFileURL(finalSkillPath).href;
-            console.error(`[MCP] Importing skill from URL: ${skillModuleUrl}`);
-
-            const skillModule = await import(skillModuleUrl);
-            console.error(`[MCP] Skill module loaded successfully`);
-
-            // Get the skill function
-            const skillFunction = skillModule[skillName] || skillModule.default;
-            if (!skillFunction) {
-                throw new Error(`Skill function '${skillName}' not found in module`);
-            }
+            
+            console.error(`[MCP] Loaded ${skill.edition} ${skill.category} skill: ${skillName}`);
 
             // Set up event listeners BEFORE executing the skill
             const observations: string[] = [];
@@ -456,12 +442,13 @@ function createSkillExecutor(skillName: string, edition: 'java' | 'bedrock' = 'j
                 }
             };
 
-            // Execute the skill with simple parameters (skills now expect plain objects)
-            console.error(`[MCP] Calling skill function with args:`, args);
+            // Execute the skill using the provider
+            console.error(`[MCP] Calling skill.execute with args:`, args);
             let result;
 
             try {
-                result = await skillFunction(bot, args, serviceParams);
+                // Skills loaded via SkillsProvider already handle the execution
+                result = await skill.execute(bot, args);
                 console.error(`[MCP] Skill '${skillName}' returned:`, result);
             } finally {
                 // Always remove event listeners
