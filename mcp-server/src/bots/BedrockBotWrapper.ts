@@ -1,6 +1,9 @@
 import { UnifiedBot } from './UnifiedBot.js';
 import { createClient, Client } from 'bedrock-protocol';
 import { Vec3 } from 'vec3';
+import { BlockRegistry } from '../services/BlockRegistry.js';
+import { PathCalculator } from '../services/PathCalculator.js';
+import { BedrockProtocolHelpers } from './bedrock/BedrockProtocolHelpers.js';
 
 interface ChatMessage {
   timestamp: number;
@@ -22,6 +25,11 @@ export class BedrockBotWrapper implements UnifiedBot {
   private chunks: Map<string, any> = new Map();
   private eventHandlers: Map<string, Set<Function>> = new Map();
   private chatHistory: ChatMessage[] = [];
+  private blockRegistry: BlockRegistry;
+  private pathCalculator: PathCalculator;
+  private protocolHelpers: BedrockProtocolHelpers;
+  private inventoryData: Map<number, any> = new Map();
+  private selectedSlot: number = 0;
   
   health?: number;
   food?: number;
@@ -31,6 +39,9 @@ export class BedrockBotWrapper implements UnifiedBot {
   constructor(client: Client, username: string) {
     this._bot = client;
     this.username = username;
+    this.blockRegistry = new BlockRegistry('1.20');
+    this.pathCalculator = new PathCalculator(this.blockRegistry);
+    this.protocolHelpers = new BedrockProtocolHelpers(client);
     this.setupEventHandlers();
   }
   
@@ -72,6 +83,27 @@ export class BedrockBotWrapper implements UnifiedBot {
   }
   
   private setupEventHandlers(): void {
+    // Track inventory updates
+    this._bot.on('inventory_slot', (packet: any) => {
+      if (packet.window_id === 0) { // Player inventory
+        this.inventoryData.set(packet.slot, packet.item);
+        this.updateInventory();
+      }
+    });
+    
+    // Track held item changes
+    this._bot.on('mob_equipment', (packet: any) => {
+      if (packet.runtime_entity_id === this._bot.entityId) {
+        this.selectedSlot = packet.selected_slot;
+      }
+    });
+    
+    // Track chunk data
+    this._bot.on('level_chunk', (packet: any) => {
+      const chunkKey = `${packet.x},${packet.z}`;
+      this.chunks.set(chunkKey, packet);
+    });
+    
     // Track position updates
     this._bot.on('move_player', (packet: any) => {
       if (packet.runtime_id === this._bot.entityId) {
@@ -225,12 +257,27 @@ export class BedrockBotWrapper implements UnifiedBot {
     this.chat(`/msg ${username} ${message}`);
   }
   
-  blockAt(position: Vec3): any {
-    // Simplified block lookup - would need chunk data parsing
+  blockAt(position: Vec3 | { x: number; y: number; z: number }): any {
+    const pos = position instanceof Vec3 ? position : new Vec3(position.x, position.y, position.z);
+    const chunkX = Math.floor(pos.x / 16);
+    const chunkZ = Math.floor(pos.z / 16);
+    const chunkKey = `${chunkX},${chunkZ}`;
+    
+    const chunkData = this.chunks.get(chunkKey);
+    if (!chunkData) {
+      return {
+        position: pos,
+        name: 'air',
+        type: 0
+      };
+    }
+    
+    // For now, return a simplified block representation
+    // Full implementation would parse chunk data
     return {
-      position,
+      position: pos,
       name: 'unknown',
-      type: 0
+      type: 1
     };
   }
   
@@ -271,14 +318,79 @@ export class BedrockBotWrapper implements UnifiedBot {
   }
   
   async equip(item: any, destination: string): Promise<void> {
-    // Bedrock inventory management is different
-    // This would need proper implementation based on bedrock-protocol
-    console.error(`[BedrockBot] equip not fully implemented for Bedrock`);
+    if (!item) return;
+    
+    // Find the item in inventory
+    let itemSlot = -1;
+    for (const [slot, invItem] of this.inventoryData.entries()) {
+      if (invItem && invItem.network_id === item.network_id) {
+        itemSlot = slot;
+        break;
+      }
+    }
+    
+    if (itemSlot === -1) {
+      throw new Error(`Item ${item.name || item.network_id} not found in inventory`);
+    }
+    
+    // Map destination to target slot
+    let targetSlot: number;
+    switch (destination) {
+      case 'hand':
+        targetSlot = this.selectedSlot; // Hotbar slot
+        break;
+      case 'head':
+        targetSlot = 5; // Helmet slot
+        break;
+      case 'torso':
+        targetSlot = 6; // Chestplate slot
+        break;
+      case 'legs':
+        targetSlot = 7; // Leggings slot
+        break;
+      case 'feet':
+        targetSlot = 8; // Boots slot
+        break;
+      case 'off-hand':
+        targetSlot = 45; // Offhand slot
+        break;
+      default:
+        throw new Error(`Unknown destination: ${destination}`);
+    }
+    
+    // Swap items using protocol helpers
+    await this.protocolHelpers.swapItems(
+      0, itemSlot, // From player inventory
+      0, targetSlot, // To equipment slot
+      item,
+      this.inventoryData.get(targetSlot)
+    );
   }
   
   async tossStack(item: any, count?: number): Promise<void> {
-    // Bedrock item dropping
-    console.error(`[BedrockBot] tossStack not fully implemented for Bedrock`);
+    if (!item) return;
+    
+    // Find the item in inventory
+    let itemSlot = -1;
+    for (const [slot, invItem] of this.inventoryData.entries()) {
+      if (invItem && invItem.network_id === item.network_id) {
+        itemSlot = slot;
+        break;
+      }
+    }
+    
+    if (itemSlot === -1) {
+      throw new Error(`Item ${item.name || item.network_id} not found in inventory`);
+    }
+    
+    // Select the item slot if it's in hotbar
+    if (itemSlot >= 0 && itemSlot <= 8) {
+      await this.protocolHelpers.selectHotbarSlot(itemSlot);
+    }
+    
+    // Drop the item
+    const dropCount = count || item.count || 1;
+    await this.protocolHelpers.dropItem(dropCount);
   }
   
   on(event: string, listener: (...args: any[]) => void): void {
@@ -330,25 +442,34 @@ export class BedrockBotWrapper implements UnifiedBot {
   
   // Bedrock-specific methods that might be needed
   async moveTo(position: { x: number; y: number; z: number }): Promise<void> {
-    this.position = position;
+    const from = new Vec3(this.position.x, this.position.y, this.position.z);
+    const to = new Vec3(position.x, position.y, position.z);
     
-    const packet = {
-      runtime_id: this._bot.entityId || 0n,
-      position: {
-        x: position.x,
-        y: position.y,
-        z: position.z
-      },
-      pitch: this.pitch,
-      yaw: this.yaw,
-      head_yaw: this.yaw,
-      mode: 'normal',
-      on_ground: true,
-      runtime_entity_id: this._bot.entityId || 0n,
-      tick: 0n
-    };
-    
-    this._bot.queue('move_player', packet);
+    // For short distances, move directly
+    if (from.distanceTo(to) < 2) {
+      await this.protocolHelpers.moveStep(from, to);
+      this.position = position;
+    } else {
+      // For longer distances, move in straight line with steps
+      const steps = Math.ceil(from.distanceTo(to) / 1.5);
+      const deltaX = (to.x - from.x) / steps;
+      const deltaY = (to.y - from.y) / steps;
+      const deltaZ = (to.z - from.z) / steps;
+      
+      for (let i = 1; i <= steps; i++) {
+        const nextPos = new Vec3(
+          from.x + deltaX * i,
+          from.y + deltaY * i,
+          from.z + deltaZ * i
+        );
+        await this.protocolHelpers.moveStep(
+          new Vec3(this.position.x, this.position.y, this.position.z),
+          nextPos
+        );
+        this.position = { x: nextPos.x, y: nextPos.y, z: nextPos.z };
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
   }
   
   getPlayers(): any[] {
@@ -356,11 +477,71 @@ export class BedrockBotWrapper implements UnifiedBot {
   }
   
   getInventory(): any {
-    // Simplified inventory - would need proper implementation
+    const slots: any[] = [];
+    for (let i = 0; i < 36; i++) {
+      slots[i] = this.inventoryData.get(i) || null;
+    }
+    
     return {
-      slots: [],
-      selected: 0
+      slots,
+      selected: this.selectedSlot
     };
+  }
+  
+  private updateInventory(): void {
+    this.inventory = this.getInventory();
+  }
+  
+  async navigateTo(position: Vec3 | { x: number; y: number; z: number }, options?: any): Promise<void> {
+    const target = position instanceof Vec3 ? position : new Vec3(position.x, position.y, position.z);
+    const start = new Vec3(this.position.x, this.position.y, this.position.z);
+    
+    // Calculate path using PathCalculator
+    const path = this.pathCalculator.calculatePath(
+      start,
+      target,
+      (pos) => this.blockAt(pos),
+      options
+    );
+    
+    if (!path || path.length === 0) {
+      throw new Error(`No path found to ${target}`);
+    }
+    
+    // Follow the path
+    for (const waypoint of path) {
+      await this.protocolHelpers.moveStep(
+        new Vec3(this.position.x, this.position.y, this.position.z),
+        waypoint
+      );
+      this.position = { x: waypoint.x, y: waypoint.y, z: waypoint.z };
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  async digBlock(position: Vec3): Promise<void> {
+    await this.protocolHelpers.startBreakBlock(position);
+    
+    // Calculate break time based on block hardness
+    const block = this.blockAt(position);
+    const hardness = this.blockRegistry.getHardness(block?.type || 0);
+    const breakTime = Math.max(50, hardness * 1000);
+    
+    await new Promise(resolve => setTimeout(resolve, breakTime));
+    await this.protocolHelpers.stopBreakBlock(position);
+  }
+  
+  async placeBlock(referenceBlock: any, face: Vec3): Promise<void> {
+    const position = referenceBlock.position.plus(face);
+    await this.protocolHelpers.placeBlock(position);
+  }
+  
+  async activateBlock(block: any): Promise<void> {
+    await this.protocolHelpers.openContainer(block.position);
+  }
+  
+  async useItem(): Promise<void> {
+    await this.protocolHelpers.useItem();
   }
   
   getChatHistory(): ChatMessage[] {
