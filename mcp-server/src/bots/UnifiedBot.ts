@@ -55,6 +55,12 @@ export interface UnifiedBot {
   dig?(block: any): Promise<void>;
   placeBlock?(referenceBlock: any, faceVector: Vec3): Promise<void>;
   
+  // Bedrock-specific methods
+  digBlock?(position: Vec3): Promise<void>;
+  moveTo?(position: { x: number; y: number; z: number }): Promise<void>;
+  navigateTo?(position: Vec3 | { x: number; y: number; z: number }, options?: any): Promise<void>;
+  useItem?(): Promise<void>;
+  
   // Chat history (Bedrock-specific but can be implemented for Java too)
   getChatHistory?(): Array<{ timestamp: number; username: string; message: string; type: string }>;
   addChatMessage?(username: string, message: string, type: string): void;

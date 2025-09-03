@@ -51,6 +51,8 @@ import { BedrockBotWrapper } from './bots/BedrockBotWrapper.js';
 import { UnifiedBot } from './bots/UnifiedBot.js';
 import { BotWithLogger } from './types.js';
 import { configureContainer, getContainer } from './container.js';
+import { isContainerReady } from './config/container.js';
+import { TOKENS } from './config/tokens.js';
 import { SkillsProvider } from './services/SkillsProvider.js';
 
 // Parse command line arguments (now optional)
@@ -77,11 +79,23 @@ const server = new Server(
 // Configure dependency injection
 configureContainer();
 
-// Get instances from DI container
+// Verify container is ready
+if (!isContainerReady()) {
+    console.error('[MCP] Container configuration failed');
+    process.exit(1);
+}
+
+// Get instances from DI container using both legacy and typed tokens for demonstration
 const container = getContainer();
-const botManager = container.resolve(BotManager);
-const skillRegistry = container.resolve(SkillRegistry);
-const skillsProvider = container.resolve(SkillsProvider);
+const botManager = container.resolve(TOKENS.BotManager);
+const skillRegistry = container.resolve(TOKENS.SkillRegistry);
+const skillsProvider = container.resolve(TOKENS.SkillsProvider);
+
+// Example of resolving with typed tokens (these are available for future use)
+const logger = container.resolve(TOKENS.Logger) as any;
+if (logger && typeof logger.info === 'function') {
+    logger.info('MCP Server initializing with enhanced DI system');
+}
 
 // Initialize skills
 async function initializeSkills() {

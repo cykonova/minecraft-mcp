@@ -2,8 +2,11 @@ import { UnifiedBot } from './UnifiedBot.js';
 import { createClient, Client } from 'bedrock-protocol';
 import { Vec3 } from 'vec3';
 import { BlockRegistry } from '../services/BlockRegistry.js';
-import { PathCalculator } from '../services/PathCalculator.js';
+import { IPathfindingService } from '../services/pathfinding/IPathfindingService.js';
+import { PathfindingService } from '../services/pathfinding/PathfindingService.js';
 import { BedrockProtocolHelpers } from './bedrock/BedrockProtocolHelpers.js';
+import { getContainer } from '../config/container.js';
+import { TOKENS } from '../config/tokens.js';
 
 interface ChatMessage {
   timestamp: number;
@@ -26,7 +29,7 @@ export class BedrockBotWrapper implements UnifiedBot {
   private eventHandlers: Map<string, Set<Function>> = new Map();
   private chatHistory: ChatMessage[] = [];
   private blockRegistry: BlockRegistry;
-  private pathCalculator: PathCalculator;
+  private pathfindingService: IPathfindingService;
   private protocolHelpers: BedrockProtocolHelpers;
   private inventoryData: Map<number, any> = new Map();
   private selectedSlot: number = 0;
@@ -36,11 +39,26 @@ export class BedrockBotWrapper implements UnifiedBot {
   entity?: any;
   inventory?: any;
   
-  constructor(client: Client, username: string) {
+  constructor(client: Client, username: string, pathfindingService?: IPathfindingService) {
     this._bot = client;
     this.username = username;
     this.blockRegistry = new BlockRegistry('1.20');
-    this.pathCalculator = new PathCalculator(this.blockRegistry);
+    
+    // Use provided service or get from container, fallback to direct instantiation
+    if (pathfindingService) {
+      this.pathfindingService = pathfindingService;
+    } else {
+      try {
+        const container = getContainer();
+        this.pathfindingService = container.resolve(TOKENS.PathfindingService);
+        console.error(`[BedrockBotWrapper] Using injected PathfindingService for ${username}`);
+      } catch (error) {
+        // Fallback to direct instantiation if container isn't configured
+        console.warn(`[BedrockBotWrapper] Container not available, creating PathfindingService directly for ${username}:`, error);
+        this.pathfindingService = new PathfindingService(this.blockRegistry);
+      }
+    }
+    
     this.protocolHelpers = new BedrockProtocolHelpers(client);
     this.setupEventHandlers();
   }
@@ -496,8 +514,8 @@ export class BedrockBotWrapper implements UnifiedBot {
     const target = position instanceof Vec3 ? position : new Vec3(position.x, position.y, position.z);
     const start = new Vec3(this.position.x, this.position.y, this.position.z);
     
-    // Calculate path using PathCalculator
-    const path = this.pathCalculator.calculatePath(
+    // Calculate path using PathfindingService
+    const path = this.pathfindingService.calculatePath(
       start,
       target,
       (pos) => this.blockAt(pos),
