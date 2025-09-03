@@ -24,14 +24,20 @@ export class BotManager {
     private bots: Map<string, BotInstance> = new Map();
     private activeBotId: string | null = null;
     
+    // Public properties for default connection
+    public defaultHost?: string;
+    public defaultPort?: number;
+    
     private pathfindingService?: IPathfindingService;
     private movementService?: IMovementService;
     private inventoryService?: IInventoryService;
     private blockInteractionService?: IBlockInteractionService;
     private combatService?: ICombatService;
 
-    constructor() {
+    constructor(defaultHost?: string, defaultPort?: number) {
         // Services will be injected after container is ready
+        this.defaultHost = defaultHost;
+        this.defaultPort = defaultPort;
     }
 
     /**

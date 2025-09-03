@@ -1,0 +1,46 @@
+[Unit]
+Description=Minecraft MCP SSE Server
+Documentation=https://github.com/minecraft-mcp/mcp-server
+After=network.target
+
+[Service]
+Type=simple
+User=minecraft-mcp
+Group=minecraft-mcp
+WorkingDirectory=/opt/minecraft-mcp
+
+# Environment configuration
+EnvironmentFile=/etc/minecraft-mcp/server.env
+
+# Start command with options from environment
+ExecStart=/usr/bin/node dist/mcp-server-sse.js \
+    --port ${PORT} \
+    --bind ${BIND_ADDRESS} \
+    --api-key-file /etc/minecraft-mcp/api-key \
+    ${SSL_CERT_FILE:+--ssl-cert ${SSL_CERT_FILE}} \
+    ${SSL_KEY_FILE:+--ssl-key ${SSL_KEY_FILE}} \
+    ${DEFAULT_MC_HOST:+--host ${DEFAULT_MC_HOST}} \
+    ${DEFAULT_MC_PORT:+--mc-port ${DEFAULT_MC_PORT}}
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/minecraft-mcp
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=512
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minecraft-mcp
+
+[Install]
+WantedBy=multi-user.target

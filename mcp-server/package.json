@@ -34,18 +34,24 @@
         "LICENSE"
     ],
     "scripts": {
-        "build": "tsc && chmod +x dist/mcp-server.js",
+        "build": "tsc && chmod +x dist/mcp-server.js && chmod +x dist/mcp-server-sse.js",
         "dev": "tsc --watch",
         "start": "node dist/mcp-server.js",
+        "start:sse": "node dist/mcp-server-sse.js",
         "test": "echo \"No tests yet\""
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^0.6.0",
+        "@types/cors": "^2.8.19",
+        "@types/express": "^5.0.3",
         "@types/ws": "^8.18.1",
         "axios": "^1.6.0",
         "bedrock-protocol": "^3.48.1",
         "commander": "^11.1.0",
+        "cors": "^2.8.5",
+        "express": "^5.1.0",
         "fastest-levenshtein": "^1.0.16",
+        "http-proxy-middleware": "^2.0.6",
         "jimp": "^0.22.12",
         "mineflayer": "^4.14.0",
         "mineflayer-collectblock": "^1.4.0",

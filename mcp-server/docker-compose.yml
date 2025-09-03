@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  minecraft-mcp:
+    build: .
+    image: minecraft-mcp:latest
+    container_name: minecraft-mcp-server
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-3010}:3000"
+    volumes:
+      # Config volume for API key and settings
+      - mcp-config:/app/config
+      # Logs volume
+      - mcp-logs:/app/logs
+      # Optional: SSL certificates
+      - ${SSL_CERTS_PATH:-./certs}:/app/certs:ro
+    environment:
+      # Server configuration
+      - NODE_ENV=production
+      - PORT=3000
+      - BIND_ADDRESS=0.0.0.0
+      
+      # Optional: Default Minecraft server
+      - DEFAULT_MC_HOST=${DEFAULT_MC_HOST:-}
+      - DEFAULT_MC_PORT=${DEFAULT_MC_PORT:-25565}
+      
+      # SSL configuration (optional)
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-}
+      - SSL_KEY_FILE=${SSL_KEY_FILE:-}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    
+    command: >
+      sh -c "
+        # Build command - no auth for local Docker use
+        CMD='node dist/mcp-server-sse.js --port 3000 --bind 0.0.0.0'
+        
+        if [ -n '${SSL_CERT_FILE}' ] && [ -n '${SSL_KEY_FILE}' ]; then
+          CMD=\"$$CMD --ssl-cert ${SSL_CERT_FILE} --ssl-key ${SSL_KEY_FILE}\"
+        fi
+        
+        if [ -n '${DEFAULT_MC_HOST}' ]; then
+          CMD=\"$$CMD --host ${DEFAULT_MC_HOST} --mc-port ${DEFAULT_MC_PORT}\"
+        fi
+        
+        echo \"Starting MCP server with: $$CMD\"
+        exec $$CMD
+      "
+    
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - minecraft-net
+    
+    labels:
+      - "com.minecraft-mcp.description=Minecraft MCP SSE Server"
+      - "com.minecraft-mcp.version=0.2.21"
+
+
+networks:
+  minecraft-net:
+    driver: bridge
+
+volumes:
+  mcp-config:
+    driver: local
+  mcp-logs:
+    driver: local
