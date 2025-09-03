@@ -9,12 +9,14 @@ export { FollowPlayerSkill } from './FollowPlayerSkill.js';
 export { GuardPlayerSkill } from './GuardPlayerSkill.js';
 export { MineOreVeinSkill } from './MineOreVeinSkill.js';
 export { BuildStructureSkill } from './BuildStructureSkill.js';
+export { Dance } from './Dance.js';
 
 import { container } from 'tsyringe';
 import { FollowPlayerSkill } from './FollowPlayerSkill.js';
 import { GuardPlayerSkill } from './GuardPlayerSkill.js';
 import { MineOreVeinSkill } from './MineOreVeinSkill.js';
 import { BuildStructureSkill } from './BuildStructureSkill.js';
+import { Dance } from './Dance.js';
 import { ICompositeSkill } from '../ICompositeSkill.js';
 
 /**
@@ -24,7 +26,8 @@ export const COMPOSITE_SKILL_CLASSES = [
     FollowPlayerSkill,
     GuardPlayerSkill,
     MineOreVeinSkill,
-    BuildStructureSkill
+    BuildStructureSkill,
+    Dance
 ];
 
 /**
@@ -62,6 +65,14 @@ export const COMPOSITE_SKILL_REGISTRY = {
         category: 'composite',
         edition: 'java',
         dependencies: ['buildSomething', 'goToKnownLocation', 'openInventory', 'placeItemNearYou']
+    },
+    dance: {
+        class: Dance,
+        name: 'dance',
+        description: 'Dance around for a specific amount of time with various moves',
+        category: 'composite',
+        edition: 'universal',
+        dependencies: []
     }
 };
 
@@ -245,6 +256,20 @@ function getSkillParameters(skillName: string): Record<string, any> {
                 default: true
             }
         },
+        dance: {
+            time: {
+                type: 'number',
+                description: 'The number of seconds to dance for (default: 10, max: 60)',
+                minimum: 1,
+                maximum: 60,
+                default: 10
+            },
+            name: {
+                type: 'string',
+                description: 'Optional: The name of the person to dance with',
+                maxLength: 16
+            }
+        },
         buildStructure: {
             blueprintName: {
                 type: 'string',
@@ -299,7 +324,8 @@ function getRequiredParameters(skillName: string): string[] {
         followPlayer: ['playerName'],
         guardPlayer: ['playerName'],
         mineOreVein: [],
-        buildStructure: []
+        buildStructure: [],
+        dance: []
     };
 
     return requiredParams[skillName] || [];
