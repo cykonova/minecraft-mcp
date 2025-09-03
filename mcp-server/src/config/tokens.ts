@@ -10,6 +10,8 @@ import { BlockRegistry } from '../services/BlockRegistry.js';
 import { IBlockInteractionService } from '../services/blocks/IBlockInteractionService.js';
 import { IPathfindingService } from '../services/pathfinding/IPathfindingService.js';
 import { IInventoryService } from '../services/inventory/IInventoryService.js';
+import { ICombatService } from '../services/combat/ICombatService.js';
+import { IMovementService } from '../services/movement/IMovementService.js';
 import { UnifiedBot } from '../bots/UnifiedBot.js';
 import { BotWithLogger, Logger } from '../types.js';
 import { ISkill } from '../skills/ISkill.js';
@@ -28,6 +30,8 @@ export const TOKENS = {
   BlockInteractionService: 'BlockInteractionService' as any,
   PathfindingService: 'PathfindingService' as any,
   InventoryService: 'InventoryService' as any,
+  CombatService: 'CombatService' as any,
+  MovementService: 'MovementService' as any,
   
   // Typed injection tokens for interfaces and utilities
   Logger: 'Logger' as any,
@@ -53,7 +57,13 @@ export const TOKENS = {
   
   // Strategy tokens
   JavaInventoryStrategy: 'JavaInventoryStrategy' as any,
-  BedrockInventoryStrategy: 'BedrockInventoryStrategy' as any
+  BedrockInventoryStrategy: 'BedrockInventoryStrategy' as any,
+  
+  // Combat-related tokens
+  ThreatAssessment: 'ThreatAssessment' as any,
+  MeleeStrategy: 'MeleeStrategy' as any,
+  RangedStrategy: 'RangedStrategy' as any,
+  DefensiveStrategy: 'DefensiveStrategy' as any
 } as const;
 
 /**

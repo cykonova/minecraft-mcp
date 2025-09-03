@@ -7,6 +7,12 @@ import { IServiceProvider, DIToken } from '../config/types.js';
 import { getContainer } from '../config/container.js';
 import { TOKENS } from '../config/tokens.js';
 import { BlockInteractionService } from '../services/blocks/BlockInteractionService.js';
+import { CombatService } from '../services/combat/CombatService.js';
+import { ThreatAssessment } from '../services/combat/ThreatAssessment.js';
+import { MeleeStrategy } from '../services/combat/strategies/MeleeStrategy.js';
+import { RangedStrategy } from '../services/combat/strategies/RangedStrategy.js';
+import { DefensiveStrategy } from '../services/combat/strategies/DefensiveStrategy.js';
+import { MovementService } from '../services/movement/MovementService.js';
 
 /**
  * Abstract base class for service providers
@@ -116,6 +122,16 @@ export class CoreServicesProvider extends ServiceProvider {
     
     // Register BlockInteractionService as singleton
     this.registerSingleton(TOKENS.BlockInteractionService, BlockInteractionService);
+    
+    // Register MovementService as singleton
+    this.registerSingleton(TOKENS.MovementService, MovementService);
+    
+    // Register Combat-related services as singletons
+    this.registerSingleton(TOKENS.ThreatAssessment, ThreatAssessment);
+    this.registerSingleton(TOKENS.MeleeStrategy, MeleeStrategy);
+    this.registerSingleton(TOKENS.RangedStrategy, RangedStrategy);
+    this.registerSingleton(TOKENS.DefensiveStrategy, DefensiveStrategy);
+    this.registerSingleton(TOKENS.CombatService, CombatService);
     
     // Core services are already registered in the main container configuration
     // This provider can be used for additional core service registrations
