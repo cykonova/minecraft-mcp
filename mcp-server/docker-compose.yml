@@ -3,7 +3,7 @@ version: '3.8'
 services:
   minecraft-mcp:
     build: .
-    image: minecraft-mcp:latest
+    image: ghcr.io/cykonova/minecraft-mcp/mcp-server:latest
     container_name: minecraft-mcp-server
     restart: unless-stopped
     ports:
