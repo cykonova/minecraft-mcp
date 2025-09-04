@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { UnifiedBot } from './UnifiedBot.js';
-import { createClient, Client } from 'bedrock-protocol';
+import { Client } from 'bedrock-protocol';
+import { createPatchedBedrockClient } from './bedrock/patchedBedrockClient.js';
 import { Vec3 } from 'vec3';
 import { BlockRegistry } from '../services/BlockRegistry.js';
 import { IPathfindingService } from '../services/pathfinding/IPathfindingService.js';
@@ -101,12 +102,12 @@ export class BedrockBotWrapper implements UnifiedBot {
   }): Promise<BedrockBotWrapper> {
     return new Promise((resolve, reject) => {
       try {
-        const client = createClient({
+        const client = createPatchedBedrockClient({
           host: options.host,
           port: options.port || 19132, // Default Bedrock port
           username: options.username,
           offline: options.offline !== false, // Default to offline mode
-          version: (options.version || '1.20.80') as any, // Latest Bedrock version
+          version: (options.version || '1.21.102.1') as any, // Use the patched version
           skipPing: true
         });
         
