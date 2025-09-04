@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build: .
+    container_name: minecraft-mcp-test
+    environment:
+      - NODE_ENV=production
+      - DEBUG=${DEBUG:-false}
+      - DEFAULT_HOST=minecraft-bedrock  # Connect to Bedrock container by name
+      - DEFAULT_PORT=19132
+      - PORT=3000
+    ports:
+      - "3014:3000"  # Use different port to avoid conflicts
+    networks:
+      - minecraft_server_default  # Join the existing Minecraft network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+networks:
+  minecraft_server_default:
+    external: true  # Use the existing network from minecraft_server
