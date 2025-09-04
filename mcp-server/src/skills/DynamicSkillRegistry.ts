@@ -18,7 +18,16 @@ export class DynamicSkillRegistry {
     private currentEdition: 'java' | 'bedrock' | null = null;
 
     constructor() {
-        this.loadSkills();
+        // Load skills asynchronously after construction
+        this.loadSkillsAsync();
+    }
+    
+    private async loadSkillsAsync() {
+        try {
+            await this.loadSkills();
+        } catch (error) {
+            console.error('[DynamicSkillRegistry] Failed to load skills:', error);
+        }
     }
 
     private async loadSkills() {
