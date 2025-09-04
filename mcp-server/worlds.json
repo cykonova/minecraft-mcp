@@ -1,0 +1,40 @@
+{
+  "worlds": {
+    "local": {
+      "name": "Local Development",
+      "host": "localhost",
+      "port": 25565,
+      "edition": "java",
+      "version": "auto",
+      "description": "Local Minecraft Java Edition server"
+    },
+    "local-bedrock": {
+      "name": "Local Bedrock Docker",
+      "host": "host.docker.internal",
+      "port": 19132,
+      "edition": "bedrock",
+      "version": "1.21.102.1",
+      "offline": true,
+      "description": "Local Minecraft Bedrock server in Docker"
+    },
+    "perseus": {
+      "name": "Perseus Bedrock",
+      "host": "minecraft-bedrock",
+      "port": 19132,
+      "edition": "bedrock",
+      "version": "1.21.102.1",
+      "offline": true,
+      "description": "Perseus Minecraft Bedrock server (use when MCP is running on Perseus)"
+    },
+    "perseus-external": {
+      "name": "Perseus External",
+      "host": "perseus.local",
+      "port": 19132,
+      "edition": "bedrock",
+      "version": "1.21.102.1",
+      "offline": true,
+      "description": "Perseus Bedrock server from external connection (usually won't work due to network restrictions)"
+    }
+  },
+  "defaultWorld": "local"
+}

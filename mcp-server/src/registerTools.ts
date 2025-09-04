@@ -12,6 +12,7 @@ import { UnifiedBot } from './bots/UnifiedBot.js';
 import { BotWithLogger } from './types.js';
 import { getContainer } from './container.js';
 import { TOKENS } from './config/tokens.js';
+import { WorldConfigManager } from './config/WorldConfig.js';
 
 /**
  * Register all MCP tools including joinGame, leaveGame, and skill tools
@@ -19,10 +20,12 @@ import { TOKENS } from './config/tokens.js';
 export function registerTools(server: Server, botManager: BotManager): void {
     const container = getContainer();
     const skillRegistry = container.resolve(TOKENS.SkillRegistry) as any;
+    const worldConfig = new WorldConfigManager();
     
     const debugMode = process.env.DEBUG === 'true';
     if (debugMode) {
         process.stderr.write(`[DEBUG] Registering tools with ${skillRegistry.getAllSkills().length} skills\n`);
+        process.stderr.write(`[DEBUG] Loaded ${worldConfig.getWorldList().length} worlds\n`);
     }
     
     // List all available tools
@@ -33,7 +36,7 @@ export function registerTools(server: Server, botManager: BotManager): void {
         const tools = [
             {
                 name: "joinGame",
-                description: "Spawn a bot into the Minecraft game (supports both Java and Bedrock editions)",
+                description: `Spawn a bot into a Minecraft world. Available worlds: ${worldConfig.getWorldList().join(', ')}`,
                 inputSchema: {
                     type: "object",
                     properties: {
@@ -41,26 +44,9 @@ export function registerTools(server: Server, botManager: BotManager): void {
                             type: "string",
                             description: "The username for the bot"
                         },
-                        host: {
+                        world: {
                             type: "string",
-                            description: "Minecraft server host (defaults to 'localhost' or command line option)"
-                        },
-                        port: {
-                            type: "number",
-                            description: "Minecraft server port (defaults to 25565 for Java, 19132 for Bedrock)"
-                        },
-                        edition: {
-                            type: "string",
-                            enum: ["java", "bedrock"],
-                            description: "Minecraft edition to connect to (defaults to 'java')"
-                        },
-                        offline: {
-                            type: "boolean",
-                            description: "Use offline mode (Bedrock only, defaults to true)"
-                        },
-                        version: {
-                            type: "string",
-                            description: "Minecraft version (optional, auto-detect for Java)"
+                            description: `World to connect to. Options: ${worldConfig.getWorldList().join(', ')} (defaults to '${worldConfig.getDefaultWorld()?.name || 'local'}')`
                         }
                     },
                     required: ["username"]
@@ -81,6 +67,14 @@ export function registerTools(server: Server, botManager: BotManager): void {
                             description: "If true, disconnect all bots and close all connections"
                         }
                     }
+                }
+            },
+            {
+                name: "listWorlds",
+                description: "List all available Minecraft worlds configured in worlds.json",
+                inputSchema: {
+                    type: "object",
+                    properties: {}
                 }
             }
         ];
@@ -109,20 +103,25 @@ export function registerTools(server: Server, botManager: BotManager): void {
         // Handle joinGame tool
         if (name === "joinGame") {
             try {
-                const { username, host, port, edition = 'java', offline = true, version } = args as { 
+                const { username, world: worldId } = args as { 
                     username: string; 
-                    host?: string; 
-                    port?: number;
-                    edition?: 'java' | 'bedrock';
-                    offline?: boolean;
-                    version?: string;
+                    world?: string;
                 };
 
-                // Use default values from botManager
-                const serverHost = host || botManager.defaultHost || 'localhost';
-                const defaultPort = edition === 'bedrock' ? 19132 : 25565;
-                const serverPort = port || botManager.defaultPort || defaultPort;
+                // Get world configuration
+                const world = worldId ? worldConfig.getWorld(worldId) : worldConfig.getDefaultWorld();
+                if (!world) {
+                    const availableWorlds = worldConfig.getWorldList().join(', ');
+                    throw new Error(`Invalid world '${worldId}'. Available worlds: ${availableWorlds}`);
+                }
 
+                const serverHost = world.host;
+                const serverPort = world.port;
+                const edition = world.edition;
+                const offline = world.offline !== undefined ? world.offline : true;
+                const version = world.version;
+
+                console.error(`[MCP] Connecting to world '${worldId || 'default'}' - ${world.name}`);
                 console.error(`[MCP] Attempting to spawn ${edition} bot '${username}' on ${serverHost}:${serverPort}`);
 
                 let unifiedBot: UnifiedBot;
@@ -232,6 +231,33 @@ export function registerTools(server: Server, botManager: BotManager): void {
                     content: [{
                         type: "text",
                         text: `Failed to leave game: ${error instanceof Error ? error.message : String(error)}`
+                    }],
+                    isError: true
+                };
+            }
+        }
+
+        // Handle listWorlds tool
+        if (name === "listWorlds") {
+            try {
+                const worlds = worldConfig.getAllWorlds();
+                const worldList = Object.entries(worlds).map(([id, world]) => {
+                    return `• **${id}**: ${world.name} (${world.edition} - ${world.host}:${world.port})${world.description ? ` - ${world.description}` : ''}`;
+                }).join('\n');
+                
+                const defaultWorld = worldConfig.getDefaultWorld();
+                
+                return {
+                    content: [{
+                        type: "text",
+                        text: `Available worlds:\n${worldList}\n\nDefault: ${defaultWorld ? defaultWorld.name : 'none'}`
+                    }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: `Failed to list worlds: ${error instanceof Error ? error.message : String(error)}`
                     }],
                     isError: true
                 };
