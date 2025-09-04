@@ -105,21 +105,8 @@ async function main() {
   // Log process info for debugging
   process.stderr.write(`[PID ${process.pid}] Starting proxy...\n`);
   
-  // Add a small random delay to reduce race conditions
-  const delay = Math.random() * 100; // 0-100ms random delay
-  await new Promise(resolve => setTimeout(resolve, delay));
-  
-  // Check if we should be primary or secondary
-  const isPrimary = await acquireLock();
-  
-  if (!isPrimary) {
-    process.stderr.write(`[PID ${process.pid}] Running as secondary instance (no SSE connection).\n`);
-    // Run a minimal stdio server without SSE connection
-    await runSecondaryInstance();
-    return;
-  }
-  
-  process.stderr.write(`[PID ${process.pid}] Running as primary instance (with SSE connection).\n`);
+  // Always run as primary - Claude Desktop should only spawn one instance
+  process.stderr.write(`[PID ${process.pid}] Connecting to SSE server...\n`);
   
   // Check if already initialized (backup check)
   if (isInitialized) {
@@ -157,13 +144,18 @@ async function main() {
     let sseClient: Client | null = null;
     
     server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+      process.stderr.write(`[PID ${process.pid}] ListTools request received\n`);
       if (!sseClient) {
         process.stderr.write(`[PID ${process.pid}] Tools requested but SSE not connected yet\n`);
         return { tools: [] };
       }
       try {
+        process.stderr.write(`[PID ${process.pid}] Forwarding ListTools request to SSE server\n`);
         const result = await sseClient.listTools(request.params || {});
-        process.stderr.write(`[PID ${process.pid}] Returning ${result.tools?.length || 0} tools\n`);
+        process.stderr.write(`[PID ${process.pid}] SSE server returned ${result.tools?.length || 0} tools\n`);
+        if (result.tools && result.tools.length > 0) {
+          process.stderr.write(`[PID ${process.pid}] First tool: ${result.tools[0].name}\n`);
+        }
         return result;
       } catch (error) {
         process.stderr.write(`[PID ${process.pid}] Error listing tools: ${error}\n`);
@@ -184,11 +176,7 @@ async function main() {
       }
     });
     
-    // Connect the stdio server IMMEDIATELY to respond to initialize request
-    await server.connect(stdioTransport);
-    process.stderr.write(`[PID ${process.pid}] Stdio server connected and responding\n`);
-    
-    // NOW: Connect to remote SSE server in the background
+    // FIRST: Connect to remote SSE server BEFORE connecting stdio
     process.stderr.write(`[PID ${process.pid}] Connecting to SSE server at ${remoteUrl.toString()}\n`);
     
     // Create client to connect to remote SSE server
@@ -218,7 +206,9 @@ async function main() {
     
     process.stderr.write(`[PID ${process.pid}] Successfully connected to SSE server\n`);
     
-    process.stderr.write(`[PID ${process.pid}] Proxy ready for stdio communication\n`);
+    // NOW connect stdio server after SSE is ready
+    await server.connect(stdioTransport);
+    process.stderr.write(`[PID ${process.pid}] Stdio server connected - proxy ready!\n`);
     
   } catch (error) {
     process.stderr.write(`Proxy error: ${error}\n`);

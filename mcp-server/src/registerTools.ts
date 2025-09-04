@@ -20,8 +20,16 @@ export function registerTools(server: Server, botManager: BotManager): void {
     const container = getContainer();
     const skillRegistry = container.resolve(TOKENS.SkillRegistry) as any;
     
+    const debugMode = process.env.DEBUG === 'true';
+    if (debugMode) {
+        process.stderr.write(`[DEBUG] Registering tools with ${skillRegistry.getAllSkills().length} skills\n`);
+    }
+    
     // List all available tools
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
+    server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+        if (debugMode) {
+            process.stderr.write(`[DEBUG] ListTools request received with params: ${JSON.stringify(request?.params)}\n`);
+        }
         const tools = [
             {
                 name: "joinGame",
@@ -84,7 +92,14 @@ export function registerTools(server: Server, botManager: BotManager): void {
             inputSchema: skill.inputSchema
         }));
 
-        return { tools: [...tools, ...skillTools] };
+        const allTools = [...tools, ...skillTools];
+        const response = { tools: allTools };
+        if (debugMode) {
+            process.stderr.write(`[DEBUG] Returning ${allTools.length} tools (2 base + ${skillTools.length} skills)\n`);
+            process.stderr.write(`[DEBUG] Full tools response: ${JSON.stringify(response).substring(0, 500)}...\n`);
+        }
+
+        return response;
     });
 
     // Handle tool calls

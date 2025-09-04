@@ -74,6 +74,39 @@ const mcpServer = new Server(
   }
 );
 
+// Add debug logging for all requests/responses
+const debugMode = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+if (debugMode) {
+  process.stderr.write('[DEBUG] Debug mode enabled\n');
+  
+  // Wrap the server's message handling to log all messages
+  const originalConnect = mcpServer.connect.bind(mcpServer);
+  mcpServer.connect = async (transport: any) => {
+    process.stderr.write('[DEBUG] Client connecting via transport\n');
+    
+    // Intercept transport messages for debugging
+    const originalSend = transport.send?.bind(transport);
+    const originalReceive = transport.receive?.bind(transport);
+    
+    if (originalSend) {
+      transport.send = async (message: any) => {
+        process.stderr.write(`[DEBUG] Sending: ${JSON.stringify(message)}\n`);
+        return originalSend(message);
+      };
+    }
+    
+    if (originalReceive) {
+      transport.receive = async () => {
+        const message = await originalReceive();
+        process.stderr.write(`[DEBUG] Received: ${JSON.stringify(message)}\n`);
+        return message;
+      };
+    }
+    
+    return originalConnect(transport);
+  };
+}
+
 // Initialize and register tools and skills
 async function initializeServer() {
   await registerSkills(mcpServer, botManager);
@@ -243,21 +276,14 @@ else if (transportType === 'sse') {
     
     // SSE endpoint
     if (pathname === '/sse' && req.method === 'GET') {
-      // Set SSE headers
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no' // Disable Nginx buffering
-      });
-      
+      // Don't set headers here - SSEServerTransport will handle them
       // Create SSE transport - pass response directly
       const transport = new SSEServerTransport('/messages', res as any);
       
       // Store the session
       activeSessions!.set(transport.sessionId, transport);
       
-      // Connect the transport to the server
+      // Connect the transport to the server (this will call transport.start() which sets headers)
       await mcpServer.connect(transport);
       
       // Keep connection alive with periodic pings

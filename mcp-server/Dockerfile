@@ -42,9 +42,14 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Create directories for config and logs
 RUN mkdir -p /app/config /app/logs && \
-    chown -R minecraft:minecraft /app
+    chown -R minecraft:minecraft /app && \
+    chown minecraft:minecraft /usr/local/bin/docker-entrypoint.sh
 
 # Switch to non-root user
 USER minecraft
@@ -52,14 +57,8 @@ USER minecraft
 # Expose SSE port
 EXPOSE 3000
 
-# Use tini to handle signals properly
-ENTRYPOINT ["/sbin/tini", "--"]
-
-# Default command - SSE server
-CMD ["node", "dist/mcp-server-sse.js", \
-     "--port", "3000", \
-     "--bind", "0.0.0.0", \
-     "--api-key-file", "/app/config/api-key"]
+# Use tini to handle signals properly with our entrypoint
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
