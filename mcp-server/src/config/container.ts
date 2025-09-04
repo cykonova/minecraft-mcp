@@ -16,6 +16,7 @@ import {
 import { TOKENS } from './tokens.js';
 // import { BotManager } from '../botManager.js'; // Removed due to circular dependency
 import { SkillRegistry } from '../skillRegistry.js';
+import { DynamicSkillRegistry } from '../skills/DynamicSkillRegistry.js';
 import { SkillsProvider } from '../services/SkillsProvider.js';
 import { ServiceRegistry } from '../services/ServiceRegistry.js';
 import { BlockRegistry } from '../services/BlockRegistry.js';
@@ -147,6 +148,7 @@ export class ContainerConfigurator {
     builder
       // .registerSingleton(TOKENS.BotManager, BotManager) // Managed manually due to circular deps
       .registerSingleton(TOKENS.SkillRegistry, SkillRegistry)
+      .registerSingleton(TOKENS.DynamicSkillRegistry, DynamicSkillRegistry)
       .registerSingleton(TOKENS.SkillsProvider, SkillsProvider)
       .registerSingleton(TOKENS.ServiceRegistry, ServiceRegistry)
       .registerSingleton(TOKENS.BlockRegistry, BlockRegistry)

@@ -33,6 +33,7 @@ export class BotManager {
     private inventoryService?: IInventoryService;
     private blockInteractionService?: IBlockInteractionService;
     private combatService?: ICombatService;
+    public skillRegistry?: any; // DynamicSkillRegistry reference
 
     constructor(defaultHost?: string, defaultPort?: number) {
         // Services will be injected after container is ready
@@ -113,6 +114,11 @@ export class BotManager {
         // Set as active bot if it's the first one
         if (this.bots.size === 1) {
             this.activeBotId = id;
+            
+            // Update skill registry for the active bot's edition
+            if (this.skillRegistry) {
+                this.skillRegistry.setCurrentEdition(edition);
+            }
         }
 
         console.error(`[BotManager] Added ${edition} bot '${username}' with ID: ${id}`);
@@ -183,6 +189,19 @@ export class BotManager {
                 const remainingBots = Array.from(this.bots.keys());
                 this.activeBotId = remainingBots.length > 0 ? remainingBots[0] : null;
                 console.error(`[BotManager] Active bot updated to: ${this.activeBotId}`);
+                
+                // Update skill registry edition based on new active bot
+                if (this.skillRegistry) {
+                    if (this.activeBotId) {
+                        const newActiveBot = this.bots.get(this.activeBotId);
+                        if (newActiveBot) {
+                            this.skillRegistry.setCurrentEdition(newActiveBot.edition);
+                        }
+                    } else {
+                        // No active bot
+                        this.skillRegistry.setCurrentEdition(null);
+                    }
+                }
             }
         }
     }
@@ -208,6 +227,15 @@ export class BotManager {
         if (this.bots.has(id)) {
             this.activeBotId = id;
             console.error(`[BotManager] Set active bot to ID: ${id}`);
+            
+            // Update skill registry edition based on new active bot
+            if (this.skillRegistry) {
+                const activeBot = this.bots.get(id);
+                if (activeBot) {
+                    this.skillRegistry.setCurrentEdition(activeBot.edition);
+                }
+            }
+            
             return true;
         }
         return false;
@@ -228,6 +256,14 @@ export class BotManager {
 
     getBotCount(): number {
         return this.bots.size;
+    }
+    
+    getCurrentEdition(): 'java' | 'bedrock' | null {
+        if (!this.activeBotId) {
+            return null;
+        }
+        const activeBot = this.bots.get(this.activeBotId);
+        return activeBot ? activeBot.edition : null;
     }
 
     disconnectAll(): void {

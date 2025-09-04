@@ -13,25 +13,30 @@ import { BotWithLogger } from './types.js';
 import { getContainer } from './container.js';
 import { TOKENS } from './config/tokens.js';
 import { WorldConfigManager } from './config/WorldConfig.js';
+import { DynamicSkillRegistry } from './skills/DynamicSkillRegistry.js';
 
 /**
  * Register all MCP tools including joinGame, leaveGame, and skill tools
  */
 export function registerTools(server: Server, botManager: BotManager): void {
     const container = getContainer();
-    const skillRegistry = container.resolve(TOKENS.SkillRegistry) as any;
+    const dynamicSkillRegistry = container.resolve(TOKENS.DynamicSkillRegistry) as DynamicSkillRegistry;
     const worldConfig = new WorldConfigManager();
+    
+    // Set the skill registry on the bot manager
+    botManager.skillRegistry = dynamicSkillRegistry;
     
     const debugMode = process.env.DEBUG === 'true';
     if (debugMode) {
-        process.stderr.write(`[DEBUG] Registering tools with ${skillRegistry.getAllSkills().length} skills\n`);
+        process.stderr.write(`[DEBUG] Registering tools with dynamic skill registry\n`);
         process.stderr.write(`[DEBUG] Loaded ${worldConfig.getWorldList().length} worlds\n`);
     }
     
     // List all available tools
     server.setRequestHandler(ListToolsRequestSchema, async (request) => {
         if (debugMode) {
-            process.stderr.write(`[DEBUG] ListTools request received with params: ${JSON.stringify(request?.params)}\n`);
+            const currentEdition = botManager.getCurrentEdition();
+            process.stderr.write(`[DEBUG] ListTools request received. Current edition: ${currentEdition}\n`);
         }
         const tools = [
             {
@@ -79,17 +84,31 @@ export function registerTools(server: Server, botManager: BotManager): void {
             }
         ];
 
-        // Add all registered skills as tools
-        const skillTools = skillRegistry.getAllSkills().map((skill: any) => ({
-            name: skill.name,
-            description: skill.description,
-            inputSchema: skill.inputSchema
-        }));
+        // Add skills based on current bot's edition
+        const currentEdition = botManager.getCurrentEdition();
+        let skillTools = [];
+        
+        if (currentEdition) {
+            // Set the edition in the registry and get appropriate skills
+            dynamicSkillRegistry.setCurrentEdition(currentEdition);
+            skillTools = dynamicSkillRegistry.getAllSkills().map((skill: any) => ({
+                name: skill.name,
+                description: skill.description,
+                inputSchema: skill.inputSchema
+            }));
+        } else {
+            // No active bot - show all skills but mark them as requiring a bot
+            skillTools = [];
+            if (debugMode) {
+                process.stderr.write(`[DEBUG] No active bot, not showing any skills\n`);
+            }
+        }
 
         const allTools = [...tools, ...skillTools];
         const response = { tools: allTools };
         if (debugMode) {
-            process.stderr.write(`[DEBUG] Returning ${allTools.length} tools (2 base + ${skillTools.length} skills)\n`);
+            const baseToolCount = tools.length;
+            process.stderr.write(`[DEBUG] Returning ${allTools.length} tools (${baseToolCount} base + ${skillTools.length} ${currentEdition || 'no'} edition skills)\n`);
             process.stderr.write(`[DEBUG] Full tools response: ${JSON.stringify(response).substring(0, 500)}...\n`);
         }
 
@@ -265,7 +284,7 @@ export function registerTools(server: Server, botManager: BotManager): void {
         }
 
         // Handle skill tools
-        const skill = skillRegistry.getSkill(name);
+        const skill = dynamicSkillRegistry.getSkill(name);
         if (skill) {
             try {
                 const bot = botManager.getActiveBot();
@@ -273,15 +292,15 @@ export function registerTools(server: Server, botManager: BotManager): void {
                     throw new Error("No active bot. Please use 'joinGame' first to spawn a bot.");
                 }
 
-                // Check if bot is Bedrock
-                const isUnified = 'edition' in bot && (bot as any).edition === 'bedrock';
-                if (isUnified) {
-                    throw new Error(`Skill '${name}' is not yet supported for Bedrock edition bots.`);
+                // Check if skill is available for the bot's edition
+                if (!dynamicSkillRegistry.isSkillAvailable(name)) {
+                    const currentEdition = botManager.getCurrentEdition();
+                    throw new Error(`Skill '${name}' is not available for ${currentEdition} edition bots.`);
                 }
 
                 // Execute skill with timeout
                 const result = await Promise.race([
-                    skill.execute(bot as BotWithLogger, args),
+                    skill.handler(bot as BotWithLogger, args, {}),
                     new Promise<never>((_, reject) =>
                         setTimeout(() => reject(new Error('Skill execution timed out after 30 seconds')), 30000)
                     )

@@ -24,6 +24,7 @@ export const TOKENS = {
   // Core services - using class constructors as tokens for simplicity
   BotManager: 'BotManager' as any, // String token due to circular dependency
   SkillRegistry: SkillRegistry,
+  DynamicSkillRegistry: 'DynamicSkillRegistry' as any,
   SkillsProvider: SkillsProvider,
   ServiceRegistry: 'ServiceRegistry' as any,
   
