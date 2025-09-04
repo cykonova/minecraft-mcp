@@ -3,485 +3,406 @@
 // Import reflect-metadata FIRST for TSyringe
 import 'reflect-metadata';
 
-// Redirect ALL console.log output to stderr to prevent stdout pollution
-// This MUST be done before any other imports or code
-const originalConsoleLog = console.log;
-console.log = (...args: any[]) => {
-    console.error('[LOG]', ...args);
-};
-
-// Also redirect console.dir which might be used for error objects
-const originalConsoleDir = console.dir;
-console.dir = (obj: any, options?: any) => {
-    console.error('[DIR]', obj, options);
-};
-
-// Intercept direct writes to stdout to ensure only JSON-RPC messages go through
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-(process.stdout as any).write = (chunk: any, encoding?: any, callback?: any) => {
-    // Check if this looks like a JSON-RPC message
-    const str = chunk.toString();
-    if (str.trim().startsWith('{') && str.includes('"jsonrpc"')) {
-        // This looks like a JSON-RPC message, let it through
-        return originalStdoutWrite(chunk, encoding, callback);
-    } else {
-        // Redirect non-JSON-RPC output to stderr
-        console.error('[STDOUT REDIRECT]', str.trim());
-        if (callback) callback();
-        return true;
-    }
-};
-
+import * as http from 'http';
+import * as https from 'https';
+import * as url from 'url';
+import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-    CallToolRequestSchema,
-    CallToolRequest,
-    ErrorCode,
-    ListToolsRequestSchema,
-    McpError,
-} from '@modelcontextprotocol/sdk/types.js';
-import { program } from 'commander';
-import { Bot } from 'mineflayer';
-import { createBot as mineflayerCreateBot } from 'mineflayer';
-import { loadSkills, SkillRegistry } from './skillRegistry.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { BotManager } from './botManager.js';
-import { JavaBotWrapper } from './bots/JavaBotWrapper.js';
-import { BedrockBotWrapper } from './bots/BedrockBotWrapper.js';
-import { UnifiedBot } from './bots/UnifiedBot.js';
-import { BotWithLogger } from './types.js';
+import { registerSkills } from './registerSkills.js';
+import { registerTools } from './registerTools.js';
+import { Command } from 'commander';
 import { configureContainer, getContainer } from './container.js';
 import { isContainerReady } from './config/container.js';
 import { TOKENS } from './config/tokens.js';
-import { SkillsProvider } from './services/SkillsProvider.js';
 
-// Parse command line arguments (now optional)
+// Setup command line arguments
+const program = new Command();
 program
-    .option('-p, --port <port>', 'Default Minecraft server port')
-    .option('-h, --host <host>', 'Default Minecraft server host')
-    .parse(process.argv);
+  .option('-t, --transport <type>', 'Transport type: stdio (default) or sse', 'stdio')
+  .option('-p, --port <port>', 'SSE server port (SSE mode only)', '3000')
+  .option('--host <host>', 'Default Minecraft server host')
+  .option('--mc-port <port>', 'Default Minecraft server port')
+  .option('--api-key <key>', 'API key for authentication (SSE mode only)')
+  .option('--api-key-file <file>', 'File containing API key (SSE mode only)')
+  .option('--ssl-cert <file>', 'SSL certificate file for HTTPS (SSE mode only)')
+  .option('--ssl-key <file>', 'SSL key file for HTTPS (SSE mode only)')
+  .option('--bind <address>', 'Bind address for SSE (default: localhost, use 0.0.0.0 for all interfaces)')
+  .parse(process.argv);
 
 const options = program.opts();
-
-// Initialize the MCP server
-const server = new Server(
-    {
-        name: "fl-minecraft",
-        version: "0.1.0",
-    },
-    {
-        capabilities: {
-            tools: {}
-        }
-    }
-);
+const transportType = options.transport.toLowerCase();
 
 // Configure dependency injection
 configureContainer();
 
 // Verify container is ready
 if (!isContainerReady()) {
-    console.error('[MCP] Container configuration failed');
-    process.exit(1);
+  process.stderr.write('[MCP] Container configuration failed\n');
+  process.exit(1);
 }
 
-// Get instances from DI container
-const container = getContainer();
-const botManager = new BotManager(); // Create manually due to circular dependency issues
-const skillRegistry = container.resolve(TOKENS.SkillRegistry);
-const skillsProvider = container.resolve(TOKENS.SkillsProvider);
-
-// Inject services into BotManager manually
-botManager.injectServices(
-    container.resolve(TOKENS.PathfindingService),
-    container.resolve(TOKENS.MovementService),
-    container.resolve(TOKENS.InventoryService),
-    container.resolve(TOKENS.BlockInteractionService),
-    container.resolve(TOKENS.CombatService)
+// Initialize bot manager
+const botManager = new BotManager(
+  options.host,
+  options.mcPort ? parseInt(options.mcPort, 10) : undefined
 );
 
-// Example of resolving with typed tokens (these are available for future use)
-const logger = container.resolve(TOKENS.Logger) as any;
-if (logger && typeof logger.info === 'function') {
-    logger.info('MCP Server initializing with enhanced DI system');
+// Get container and inject services
+const container = getContainer();
+botManager.injectServices(
+  container.resolve(TOKENS.PathfindingService),
+  container.resolve(TOKENS.MovementService),
+  container.resolve(TOKENS.InventoryService),
+  container.resolve(TOKENS.BlockInteractionService),
+  container.resolve(TOKENS.CombatService)
+);
+
+// Create MCP server
+const mcpServer = new Server(
+  {
+    name: 'minecraft-mcp-server',
+    version: '0.2.21',
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
+
+// Initialize and register tools and skills
+async function initializeServer() {
+  await registerSkills(mcpServer, botManager);
+  registerTools(mcpServer, botManager);
 }
 
-// Initialize skills
-async function initializeSkills() {
-    const skills = await loadSkills(skillsProvider);
-    for (const skill of skills) {
-        skillRegistry.registerSkill(skill);
+// Setup error handling
+mcpServer.onerror = (error) => {
+  process.stderr.write(`[MCP Error] ${error}\n`);
+};
+
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  process.stderr.write('\n🛑 Shutting down MCP server...\n');
+  
+  if (transportType === 'sse' && activeSessions) {
+    // Close all active SSE sessions
+    for (const [sessionId, transport] of activeSessions) {
+      await transport.close();
     }
-}
-
-// List all available tools (joinGame + all skills)
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = [
-        {
-            name: "joinGame",
-            description: "Spawn a bot into the Minecraft game (supports both Java and Bedrock editions)",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    username: {
-                        type: "string",
-                        description: "The username for the bot"
-                    },
-                    host: {
-                        type: "string",
-                        description: "Minecraft server host (defaults to 'localhost' or command line option)"
-                    },
-                    port: {
-                        type: "number",
-                        description: "Minecraft server port (defaults to 25565 for Java, 19132 for Bedrock)"
-                    },
-                    edition: {
-                        type: "string",
-                        enum: ["java", "bedrock"],
-                        description: "Minecraft edition to connect to (defaults to 'java')"
-                    },
-                    offline: {
-                        type: "boolean",
-                        description: "Use offline mode (Bedrock only, defaults to true)"
-                    },
-                    version: {
-                        type: "string",
-                        description: "Minecraft version (optional, auto-detect for Java)"
-                    }
-                },
-                required: ["username"]
-            }
-        },
-        {
-            name: "leaveGame",
-            description: "Disconnect a bot from the game",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    username: {
-                        type: "string",
-                        description: "The username of the bot to disconnect"
-                    },
-                    disconnectAll: {
-                        type: "boolean",
-                        description: "If true, disconnect all bots and close all connections"
-                    }
-                }
-            }
-        }
-    ];
-
-    // Add all registered skills as tools
-    const skillTools = skillRegistry.getAllSkills().map(skill => ({
-        name: skill.name,
-        description: skill.description,
-        inputSchema: skill.inputSchema
-    }));
-
-    return { tools: [...tools, ...skillTools] };
+  }
+  
+  await botManager.disconnectAll();
+  process.exit(0);
 });
 
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
-    const { name, arguments: args } = request.params;
-
-    // Handle joinGame tool
-    if (name === "joinGame") {
-        try {
-            const { username, host, port, edition = 'java', offline = true, version } = args as { 
-                username: string; 
-                host?: string; 
-                port?: number;
-                edition?: 'java' | 'bedrock';
-                offline?: boolean;
-                version?: string;
-            };
-
-            // Use provided values, fall back to command line options, then defaults
-            const serverHost = host || options.host || 'localhost';
-            const defaultPort = edition === 'bedrock' ? 19132 : 25565;
-            const serverPort = port || (options.port ? parseInt(options.port) : defaultPort);
-
-            console.error(`[MCP] Attempting to spawn ${edition} bot '${username}' on ${serverHost}:${serverPort}`);
-
-            let unifiedBot: UnifiedBot;
-            let botId: string;
-
-            if (edition === 'bedrock') {
-                // Create Bedrock bot
-                const bedrockBot = await botManager.createBedrockBotWrapper({
-                    host: serverHost,
-                    port: serverPort,
-                    username: username,
-                    offline: offline,
-                    version: version || '1.20.80'
-                });
-
-                // Add logger to match Java bot structure
-                (bedrockBot as any).logger = {
-                    info: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : ${message}`);
-                    },
-                    error: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : ERROR: ${message}`);
-                    },
-                    warn: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : WARN: ${message}`);
-                    },
-                    debug: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : DEBUG: ${message}`);
-                    }
-                };
-
-                unifiedBot = bedrockBot;
-                botId = botManager.addBot(username, bedrockBot as any);
-            } else {
-                // Create Java bot (existing logic)
-                const bot = mineflayerCreateBot({
-                    host: serverHost,
-                    port: serverPort,
-                    username: username,
-                    version: version
-                    // Auto-detect version if not specified
-                }) as any;
-
-                // Dynamically import and load plugins
-                const [pathfinderModule, pvpModule, toolModule, collectBlockModule] = await Promise.all([
-                    import('mineflayer-pathfinder'),
-                    import('mineflayer-pvp'),
-                    import('mineflayer-tool'),
-                    import('mineflayer-collectblock')
-                ]);
-
-                // Load plugins
-                bot.loadPlugin(pathfinderModule.pathfinder);
-                bot.loadPlugin(pvpModule.plugin);
-                bot.loadPlugin(toolModule.plugin);
-                bot.loadPlugin(collectBlockModule.plugin);
-
-                // Add Movements constructor to bot for skills that create movement configurations
-                bot.Movements = pathfinderModule.Movements;
-
-                // Add a logger to the bot
-                bot.logger = {
-                    info: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : ${message}`);
-                    },
-                    error: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : ERROR: ${message}`);
-                    },
-                    warn: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : WARN: ${message}`);
-                    },
-                    debug: (message: string) => {
-                        const timestamp = new Date().toISOString();
-                        console.error(`[${username}] ${timestamp} : DEBUG: ${message}`);
-                    }
-                };
-
-                // Wait for spawn
-                await Promise.race([
-                    new Promise<void>((resolve, reject) => {
-                        bot.once('spawn', () => {
-                            console.error(`[MCP] Bot ${username} spawned, initializing additional properties...`);
-
-                            // Initialize properties that skills expect
-                            bot.exploreChunkSize = 16; // INTERNAL_MAP_CHUNK_SIZE
-                            bot.knownChunks = bot.knownChunks || {};
-                            bot.currentSkillCode = '';
-                            bot.currentSkillData = {};
-
-                            // Set constants that skills use
-                            bot.nearbyBlockXZRange = 20; // NEARBY_BLOCK_XZ_RANGE
-                            bot.nearbyBlockYRange = 10; // NEARBY_BLOCK_Y_RANGE
-                            bot.nearbyPlayerRadius = 10; // NEARBY_PLAYER_RADIUS
-                            bot.hearingRadius = 30; // HEARING_RADIUS
-                            bot.nearbyEntityRadius = 10; // NEARBY_ENTITY_RADIUS
-
-                            // Chat history will be initialized automatically by readChat skill when first used
-
-                            resolve();
-                        });
-                        bot.once('error', (err: Error) => reject(err));
-                        bot.once('kicked', (reason: string) => reject(new Error(`Bot kicked: ${reason}`)));
-                    }),
-                    new Promise<never>((_, reject) =>
-                        setTimeout(() => reject(new Error('Bot spawn timed out after 30 seconds')), 30000)
-                    )
-                ]);
-
-                // Wrap Java bot in unified interface with services
-                unifiedBot = botManager.createJavaBotWrapper(bot);
-                botId = botManager.addBot(username, unifiedBot as any);
-            }
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `${edition === 'bedrock' ? 'Bedrock' : 'Java'} bot '${username}' successfully joined the game on ${serverHost}:${serverPort}. Bot ID: ${botId}`
-                }]
-            };
-        } catch (error) {
-            return {
-                content: [{
-                    type: "text",
-                    text: `Failed to join game: ${error instanceof Error ? error.message : String(error)}`
-                }],
-                isError: true
-            };
-        }
-    }
-
-    // Handle leaveGame tool
-    if (name === "leaveGame") {
-        try {
-            const { username, disconnectAll } = args as { username?: string; disconnectAll?: boolean };
-
-            if (disconnectAll) {
-                const count = botManager.getBotCount();
-                botManager.disconnectAll();
-                return {
-                    content: [{
-                        type: "text",
-                        text: `Disconnected all ${count} bot(s) from the game.`
-                    }]
-                };
-            }
-
-            if (!username) {
-                throw new Error("Either 'username' or 'disconnectAll' must be specified");
-            }
-
-            const bot = botManager.getBotByUsername(username);
-            if (!bot) {
-                throw new Error(`No bot found with username '${username}'`);
-            }
-
-            botManager.removeBot(username);
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `Bot '${username}' has been disconnected from the game.`
-                }]
-            };
-        } catch (error) {
-            return {
-                content: [{
-                    type: "text",
-                    text: `Failed to leave game: ${error instanceof Error ? error.message : String(error)}`
-                }],
-                isError: true
-            };
-        }
-    }
-
-    // Handle skill tools
-    const skill = skillRegistry.getSkill(name);
-    if (skill) {
-        try {
-            // Get the active bot (for now, we'll use the most recently created bot)
-            const bot = botManager.getActiveBot();
-            if (!bot) {
-                throw new Error("No active bot. Please use 'joinGame' first to spawn a bot.");
-            }
-
-            // Check if bot is a UnifiedBot (Bedrock) - skills currently only work with Java
-            const isUnified = 'edition' in bot && (bot as any).edition === 'bedrock';
-            if (isUnified) {
-                throw new Error(`Skill '${name}' is not yet supported for Bedrock edition bots. Most skills currently only work with Java edition.`);
-            }
-
-            // Execute the skill with 30-second timeout
-            const result = await Promise.race([
-                skill.execute(bot as BotWithLogger, args),
-                new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Skill execution timed out after 30 seconds')), 30000)
-                )
-            ]);
-
-            // Ensure result is properly formatted
-            let responseText: string;
-            if (result === undefined || result === null) {
-                responseText = `Skill '${name}' executed successfully`;
-            } else if (typeof result === 'string') {
-                responseText = result;
-            } else if (typeof result === 'object') {
-                // If result is already an object, stringify it
-                responseText = JSON.stringify(result, null, 2);
-            } else {
-                // For any other type, convert to string
-                responseText = String(result);
-            }
-
-            return {
-                content: [{
-                    type: "text",
-                    text: responseText
-                }]
-            };
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error(`[MCP] Skill '${name}' execution error:`, error);
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `Skill execution failed: ${errorMessage}`
-                }],
-                isError: true
-            };
-        }
-    }
-
-    throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+process.on('SIGTERM', async () => {
+  await botManager.disconnectAll();
+  process.exit(0);
 });
 
-// Initialize and start the server
-async function main() {
-    const defaultHost = options.host || 'localhost';
-    const defaultPort = options.port || '25565';
+// Transport-specific variables
+let activeSessions: Map<string, SSEServerTransport> | undefined;
+let apiKey: string | undefined;
+let bindAddress: string = 'localhost';
 
-    console.error(`Starting MCP server for Minecraft`);
-    console.error(`Default connection: ${defaultHost}:${defaultPort} (can be overridden per bot)`);
-
-    // Initialize skills
-    await initializeSkills();
-    console.error(`Loaded ${skillRegistry.getAllSkills().length} skills`);
-
-    // Connect to stdio transport
+// STDIO Transport Mode
+if (transportType === 'stdio') {
+  // Initialize and start stdio transport
+  async function startStdio() {
+    await initializeServer();
+    
     const transport = new StdioServerTransport();
-    await server.connect(transport);
-
-    console.error("MCP server running on stdio transport");
+    await mcpServer.connect(transport);
+    
+    // Write startup info to stderr for stdio mode
+    process.stderr.write('🚀 Minecraft MCP Server (stdio) running\n');
+    process.stderr.write('\n⚙️  Configuration:\n');
+    
+    if (options.host) {
+      process.stderr.write(`  Default Minecraft server: ${options.host}:${options.mcPort || 25565}\n`);
+    } else {
+      process.stderr.write('  No default Minecraft server (specify per bot)\n');
+    }
+    
+    const skillsCount = (botManager as any).skillRegistry ? 
+      (botManager as any).skillRegistry.getAllSkills().length : 0;
+    process.stderr.write(`  Loaded ${skillsCount} skills\n\n`);
+  }
+  
+  startStdio().catch((error) => {
+    process.stderr.write(`Failed to start stdio server: ${error}\n`);
+    process.exit(1);
+  });
 }
-
-// Handle shutdown gracefully
-process.on('SIGINT', () => {
-    console.error("Shutting down...");
-    botManager.disconnectAll();
-    process.exit(0);
-});
-
-// Capture any uncaught exceptions and send to stderr
-process.on('uncaughtException', (error) => {
-    console.error('[UNCAUGHT EXCEPTION]', error);
+// SSE Transport Mode
+else if (transportType === 'sse') {
+  const ssePort = parseInt(options.port, 10);
+  bindAddress = options.bind || 'localhost';
+  
+  // Load API key from file or command line
+  if (options.apiKeyFile) {
+    try {
+      apiKey = fs.readFileSync(options.apiKeyFile, 'utf-8').trim();
+    } catch (error) {
+      process.stderr.write(`Failed to read API key file: ${error}\n`);
+      process.exit(1);
+    }
+  } else if (options.apiKey) {
+    apiKey = options.apiKey;
+  } else if (process.env.MCP_API_KEY) {
+    apiKey = process.env.MCP_API_KEY;
+  }
+  
+  // Generate a random API key if none provided and we're binding to external interfaces
+  if (!apiKey && bindAddress !== 'localhost' && bindAddress !== '127.0.0.1') {
+    apiKey = crypto.randomBytes(32).toString('hex');
+    process.stderr.write(`\n⚠️  WARNING: No API key provided for external access!\n`);
+    process.stderr.write(`Generated temporary API key: ${apiKey}\n`);
+    process.stderr.write(`Save this key securely and provide it via --api-key or MCP_API_KEY env var\n\n`);
+  }
+  
+  // Store active SSE sessions
+  activeSessions = new Map<string, SSEServerTransport>();
+  
+  // Authentication check
+  function checkAuth(req: http.IncomingMessage): boolean {
+    const parsedUrl = url.parse(req.url || '', true);
+    
+    // Skip auth for localhost connections if no API key is set
+    if (!apiKey && (bindAddress === 'localhost' || bindAddress === '127.0.0.1')) {
+      return true;
+    }
+    
+    // Check for API key in various places
+    const providedKey = 
+      req.headers['x-api-key'] || 
+      req.headers['authorization']?.replace('Bearer ', '') ||
+      parsedUrl.query.apiKey ||
+      parsedUrl.query.api_key;
+    
+    return providedKey === apiKey;
+  }
+  
+  // CORS headers
+  function setCorsHeaders(res: http.ServerResponse, origin?: string) {
+    // Allow requests with no origin or with API key
+    if (apiKey || !origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    } else {
+      // Only allow local origins without API key
+      if (origin && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      }
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  
+  // Create HTTP request handler
+  const requestHandler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const parsedUrl = url.parse(req.url || '', true);
+    const pathname = parsedUrl.pathname;
+    const origin = req.headers.origin as string | undefined;
+    
+    // Set CORS headers
+    setCorsHeaders(res, origin);
+    
+    // Handle OPTIONS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    
+    // Health check endpoint (no auth required)
+    if (pathname === '/health' && req.method === 'GET') {
+      const skillsCount = (botManager as any).skillRegistry ? 
+        (botManager as any).skillRegistry.getAllSkills().length : 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        status: 'ok', 
+        skills: skillsCount,
+        authenticated: !!apiKey,
+        sessions: activeSessions!.size
+      }));
+      return;
+    }
+    
+    // Check authentication for other endpoints
+    if (!checkAuth(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
+    
+    // SSE endpoint
+    if (pathname === '/sse' && req.method === 'GET') {
+      // Set SSE headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no' // Disable Nginx buffering
+      });
+      
+      // Create SSE transport - pass response directly
+      const transport = new SSEServerTransport('/messages', res as any);
+      
+      // Store the session
+      activeSessions!.set(transport.sessionId, transport);
+      
+      // Connect the transport to the server
+      await mcpServer.connect(transport);
+      
+      // Keep connection alive with periodic pings
+      const pingInterval = setInterval(() => {
+        if (!res.writableEnded) {
+          res.write(':ping\n\n');
+        } else {
+          clearInterval(pingInterval);
+        }
+      }, 30000);
+      
+      // Handle client disconnect
+      req.on('close', () => {
+        clearInterval(pingInterval);
+        activeSessions!.delete(transport.sessionId);
+        transport.close();
+      });
+      return;
+    }
+    
+    // Messages endpoint
+    if (pathname === '/messages' && req.method === 'POST') {
+      const sessionId = parsedUrl.query.sessionId as string;
+      
+      if (!sessionId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing sessionId' }));
+        return;
+      }
+      
+      const transport = activeSessions!.get(sessionId);
+      
+      if (!transport) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      
+      try {
+        // Pass the request to the transport's message handler
+        // The transport will handle reading the body stream
+        await transport.handlePostMessage(req as any, res as any);
+      } catch (error) {
+        process.stderr.write(`[MCP Error] Message handler error: ${error}\n`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        if (error instanceof Error) {
+          res.end(JSON.stringify({ error: error.message }));
+        } else {
+          res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
+      }
+      return;
+    }
+    
+    // 404 for other routes
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  };
+  
+  // Start the server
+  async function startSSEServer() {
+    // Initialize skills before starting
+    await initializeServer();
+    
+    let server: http.Server | https.Server;
+    
+    if (options.sslCert && options.sslKey) {
+      // HTTPS server
+      try {
+        const httpsOptions = {
+          cert: fs.readFileSync(options.sslCert),
+          key: fs.readFileSync(options.sslKey)
+        };
+        server = https.createServer(httpsOptions, requestHandler);
+      } catch (error) {
+        process.stderr.write(`Failed to load SSL certificates: ${error}\n`);
+        process.exit(1);
+      }
+    } else {
+      // HTTP server
+      server = http.createServer(requestHandler);
+    }
+    
+    server.listen(ssePort, bindAddress, () => {
+      const protocol = options.sslCert && options.sslKey ? 'https' : 'http';
+      const baseUrl = `${protocol}://${bindAddress}:${ssePort}`;
+      const skillsCount = (botManager as any).skillRegistry ? 
+        (botManager as any).skillRegistry.getAllSkills().length : 0;
+      
+      // Write startup info to stderr
+      process.stderr.write(`\n🚀 Minecraft MCP Server (SSE) running\n`);
+      process.stderr.write(`📡 SSE endpoint: ${baseUrl}/sse\n`);
+      process.stderr.write(`💬 Messages endpoint: ${baseUrl}/messages\n`);
+      process.stderr.write(`🏥 Health check: ${baseUrl}/health\n`);
+      process.stderr.write(`\n🔒 Security:\n`);
+      
+      if (apiKey) {
+        process.stderr.write(`  Authentication: ENABLED (API key required)\n`);
+        if (protocol === 'https') {
+          process.stderr.write(`  Transport: HTTPS (encrypted)\n`);
+        } else {
+          process.stderr.write(`  Transport: HTTP (⚠️  not encrypted - use HTTPS for production)\n`);
+        }
+      } else {
+        process.stderr.write(`  Authentication: DISABLED (⚠️  localhost only)\n`);
+      }
+      
+      process.stderr.write(`  Bind address: ${bindAddress}\n`);
+      process.stderr.write(`\n⚙️  Configuration:\n`);
+      
+      if (options.host) {
+        process.stderr.write(`  Default Minecraft server: ${options.host}:${options.mcPort || 25565}\n`);
+      } else {
+        process.stderr.write('  No default Minecraft server (specify per bot)\n');
+      }
+      
+      process.stderr.write(`  Loaded ${skillsCount} skills\n\n`);
+      
+      // Write client configuration example
+      if (apiKey) {
+        process.stderr.write(`Client configuration for Claude Desktop:\n`);
+        process.stderr.write(JSON.stringify({
+          mcpServers: {
+            "minecraft-remote": {
+              command: "node",
+              args: ["dist/mcp-client-proxy.js"],
+              env: {
+                MCP_SERVER_URL: `${baseUrl}/sse`,
+                MCP_API_KEY: apiKey
+              }
+            }
+          }
+        }, null, 2));
+        process.stderr.write(`\n`);
+      }
+    });
+  }
+  
+  // Start the SSE server
+  startSSEServer().catch(error => {
+    process.stderr.write(`Failed to start SSE server: ${error}\n`);
     process.exit(1);
-});
-
-// Capture any unhandled promise rejections and send to stderr
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('[UNHANDLED REJECTION] at:', promise, 'reason:', reason);
-});
-
-main().catch((error) => {
-    console.error("Failed to start server:", error);
-    process.exit(1);
-});
+  });
+} else {
+  process.stderr.write(`Invalid transport type: ${transportType}\n`);
+  process.stderr.write(`Use --transport stdio (default) or --transport sse\n`);
+  process.exit(1);
+}

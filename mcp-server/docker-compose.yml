@@ -35,7 +35,7 @@ services:
     command: >
       sh -c "
         # Build command - no auth for local Docker use
-        CMD='node dist/mcp-server-sse.js --port 3000 --bind 0.0.0.0'
+        CMD='node dist/mcp-server.js --transport sse --port 3000 --bind 0.0.0.0'
         
         if [ -n '${SSL_CERT_FILE}' ] && [ -n '${SSL_KEY_FILE}' ]; then
           CMD=\"$$CMD --ssl-cert ${SSL_CERT_FILE} --ssl-key ${SSL_KEY_FILE}\"
