@@ -1,15 +1,14 @@
 // Patched Bedrock client to support newer versions
-const bedrockProtocol = require('bedrock-protocol');
+import * as bedrockProtocol from 'bedrock-protocol';
+import { createClient as originalCreateClient } from 'bedrock-protocol';
 
-// Monkey patch the supported versions BEFORE importing createClient
+// Monkey patch the supported versions
 // Add support for version 1.21.102.1 with protocol version 819
-bedrockProtocol.supportedVersions = bedrockProtocol.supportedVersions || {};
-bedrockProtocol.supportedVersions['1.21.102.1'] = 819;
-bedrockProtocol.supportedVersions['1.21.102'] = 819;
+(bedrockProtocol as any).supportedVersions = (bedrockProtocol as any).supportedVersions || {};
+(bedrockProtocol as any).supportedVersions['1.21.102.1'] = 819;
+(bedrockProtocol as any).supportedVersions['1.21.102'] = 819;
 
 console.log('[Bedrock] Added support for version 1.21.102.1');
-
-import { createClient as originalCreateClient } from 'bedrock-protocol';
 
 // Patch createClient to handle unsupported versions and add skipPing
 export function createPatchedBedrockClient(options: any) {
