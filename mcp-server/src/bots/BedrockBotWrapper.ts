@@ -1,6 +1,6 @@
 import { injectable } from 'tsyringe';
 import { UnifiedBot } from './UnifiedBot.js';
-import { createClient, Client } from 'bedrock-protocol';
+import { createClient, Client } from './bedrock/patchedBedrockProtocol.js';
 import { Vec3 } from 'vec3';
 import { BlockRegistry } from '../services/BlockRegistry.js';
 import { IPathfindingService } from '../services/pathfinding/IPathfindingService.js';
@@ -134,7 +134,7 @@ export class BedrockBotWrapper implements UnifiedBot {
           port: options.port || 19132, // Default Bedrock port
           username: options.username,
           offline: options.offline !== false, // Default to offline mode
-          version: (options.version || '1.21.100') as any, // Use closest supported version
+          version: (options.version || '1.21.102.1') as any, // Now supported via patch
           skipPing: true // Skip server ping to avoid version check issues
         });
         
