@@ -3,9 +3,6 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 export interface SkillDefinition {
     name: string;
     description: string;
@@ -25,6 +22,9 @@ export class DynamicSkillRegistry {
     }
 
     private async loadSkills() {
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = dirname(__filename);
+        
         // Load Java skills from java/verified directory
         await this.loadSkillsFromDirectory(
             path.join(__dirname, 'java/verified'),
