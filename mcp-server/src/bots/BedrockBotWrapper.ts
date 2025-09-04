@@ -101,13 +101,41 @@ export class BedrockBotWrapper implements UnifiedBot {
   }): Promise<BedrockBotWrapper> {
     return new Promise((resolve, reject) => {
       try {
+        // TODO: Fix Bedrock server connection issue
+        // Current issue: Server at perseus.local:19132 disconnects immediately
+        // Server is running Minecraft Bedrock 1.21.102.1 in Docker container
+        // 
+        // Investigation findings:
+        // 1. The working gateway at /Users/jack/Source/minecraft_server/gateway uses:
+        //    - A patched client that adds support for 1.21.102.1 by mapping it to protocol 819
+        //    - Falls back to version 1.21.100 after patching
+        //    - Uses CommonJS require() to patch before importing
+        //    - Sets skipPing: true
+        // 
+        // 2. Our attempt to patch failed because:
+        //    - We're using ES modules, not CommonJS
+        //    - bedrock-protocol objects are frozen/non-extensible in ES module context
+        //    - Can't modify supportedVersions after import
+        // 
+        // 3. Server logs show: "requires Xbox Live authentication"
+        //    - May need to handle auth differently for this server
+        // 
+        // 4. Current workaround: Using version 1.21.100 (closest supported)
+        //    - Still results in "Server requested disconnect" error
+        // 
+        // Possible solutions to explore:
+        // - Create a CommonJS shim to patch before ES module loads
+        // - Fork bedrock-protocol to add 1.21.102.1 support
+        // - Investigate Xbox Live auth requirements
+        // - Check if server has specific connection requirements
+        
         const client = createClient({
           host: options.host,
           port: options.port || 19132, // Default Bedrock port
           username: options.username,
           offline: options.offline !== false, // Default to offline mode
           version: (options.version || '1.21.100') as any, // Use closest supported version
-          skipPing: true
+          skipPing: true // Skip server ping to avoid version check issues
         });
         
         const wrapper = new BedrockBotWrapper(
